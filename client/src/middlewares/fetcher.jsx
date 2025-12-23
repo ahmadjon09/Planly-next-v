@@ -2,9 +2,9 @@ import axios from 'axios'
 import Cookies from 'js-cookie'
 
 const origin = window.location.origin;
-// const BASE_URL = `https://planly-beta.onrender.com/api`
-// const BASE_URL = `http://192.168.0.19:3828/api`
-const BASE_URL = `${origin}/api`
+// const BASE_URL = `https://planly.onrender.com/api`
+const BASE_URL = `http://localhost:3828/api`
+// const BASE_URL = `${origin}/api`
 
 localStorage.setItem('base_api', BASE_URL)
 

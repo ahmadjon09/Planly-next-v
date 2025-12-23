@@ -59,7 +59,7 @@ export const Nav = () => {
     },
     {
       name: 'Буюртмалар',
-      path: '/orders',
+      path: '/order',
       icon: <ReceiptText size={20} />,
       hasDropdown: false
     },
@@ -168,7 +168,7 @@ export const Nav = () => {
               transition={{ type: 'spring', stiffness: 400, damping: 10 }}
             />
           </Link>
-          <span className={`text-lg font-semibold ${textColor}`}>{name}</span>
+          <span className={`text-lg font-semibold ${textColor} logo `}>{name}</span>
         </motion.div>
 
         {/* Desktop Navigation */}

@@ -1,11 +1,10 @@
 import mongoose from "mongoose";
-import QRCode from "qrcode";
-import { generateSKU } from "../controllers/product.js";
+import { generateSKU } from "../middlewares/sku.js";
 
 const ProductSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
-    sku: { type: String, default: "" },
+    sku: { type: String, default: "", unique: true },
 
     category: {
       type: String,
@@ -30,11 +29,36 @@ const ProductSchema = new mongoose.Schema(
 
     types: [
       {
-        color: { type: String, required: true },
-        size: { type: String, required: true },
-        style: { type: String, default: "classic" },
-        images: [String],
-        count: { type: Number, default: 0 },
+        color: {
+          type: String,
+          required: [true, "Ранг киритилиши шарт"],
+        },
+
+        size: {
+          type: String,
+          required: [true, "Ўлчам киритилиши шарт"],
+        },
+
+        style: {
+          type: String,
+          default: "classic",
+        },
+
+        images: {
+          type: [String],
+          default: [],
+        },
+
+        count: {
+          type: Number,
+          default: 0,
+          min: [0, "Сони манфий бўлиши мумкин эмас"],
+        },
+
+        model: {
+          type: String,
+          required: [true, "Модель номи мажбурий"],
+        },
       }
     ],
 
@@ -55,11 +79,12 @@ const ProductSchema = new mongoose.Schema(
 
 // ✅ SKU AVTOMATIK YARATISH (MUAMMONING ASOSI SHU EDI)
 ProductSchema.pre("save", function (next) {
-  if (!this.sku || this.sku.trim() === "") {
-    this.sku = generateSKU()
+  if (this.isNew && (!this.sku || this.sku.trim() === "")) {
+    this.sku = generateSKU();
   }
   next();
 });
+
 
 
 // findOneAndUpdate — isAvailable uchun
@@ -79,8 +104,21 @@ ProductSchema.pre("findOneAndUpdate", function (next) {
   next();
 });
 
+ProductSchema.methods.toJSON = function () {
+  const obj = this.toObject({ virtuals: true });
 
-// ✅ QR CODE VIRTUAL — SKU mavjud bo‘lsa URL qaytaradi
+  if (obj.types && Array.isArray(obj.types)) {
+    obj.types = obj.types.map(t => ({
+      ...t,
+      qrCode: t.model
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${t.model}`
+        : null
+    }));
+  }
+
+  return obj;
+};
+
 ProductSchema.virtual("qrCode").get(function () {
   if (!this.sku) return null;
 

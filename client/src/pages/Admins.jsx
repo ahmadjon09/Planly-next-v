@@ -29,7 +29,7 @@ export const Admins = () => {
 
   const [searchTerm, setSearchTerm] = useState('')
 
-  const admins = (data?.data?.data || []).filter(user => user.role === 'admin' && user._id !== "6920ab30ec93b86fc9eebd96")
+  const admins = (data?.data?.data || []).filter(user => user.role === 'admin')
   const isCurrentUser = user._id
 
   // Filter admins based on search

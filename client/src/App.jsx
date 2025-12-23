@@ -12,8 +12,9 @@ import { UserManagement } from './mod/UserManagement'
 import { AuthModals } from './components/AuthModals'
 import { Admins } from './pages/Admins'
 import { Workers } from './pages/Workers'
-import { ViewOrders } from './pages/Orders'
+import { Orders } from './pages/Orders'
 import QrScanner from './pages/Scann'
+import { AddNewOrder } from './mod/OrderModal'
 
 export default function App() {
   const { setUser, user, netErr } = useContext(ContextData)
@@ -26,20 +27,22 @@ export default function App() {
 
       try {
         const { data } = await Fetch.get('/users/me')
+
         if (data?.data) {
           setUser(data.data)
         } else {
-          console.log('Unknown Token')
-          Cookies.remove('user_token')
+          logout()
         }
-      } catch (error) {
-        console.log(error)
 
-        if (error.response?.status === 404) {
-          console.log('Token removed: 404 Not Found')
+      } catch (error) {
+        const status = error?.response?.status
+
+        if (status === 401 || status === 403) {
+          logout()
         } else {
-          console.log(error || 'Unknown Error')
+          console.error(error)
         }
+
       } finally {
         setIsLoading(false)
       }
@@ -48,7 +51,15 @@ export default function App() {
     if (token) {
       getMyData()
     }
-  }, [token, setUser])
+
+  }, [token])
+
+
+  const logout = () => {
+    Cookies.remove('user_token')
+    setUser(null)
+  }
+
 
   if (netErr) return <Ping />
   if (!token) return <AuthModals />
@@ -61,7 +72,8 @@ export default function App() {
     isAdmin && { path: 'user/:admin', element: <UserManagement /> },
     isAdmin && { path: 'user', element: <UserManagement /> },
     { path: 'scann', element: <QrScanner /> },
-    // { path: 'orders', element: <ViewOrders /> },
+    { path: 'order', element: <Orders /> },
+    { path: 'addorder', element: <AddNewOrder /> },
     { path: 'admin', element: <Admins /> },
     { path: 'workers', element: <Workers /> },
     { path: '*', element: <Err /> }

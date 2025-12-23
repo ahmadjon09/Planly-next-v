@@ -14,12 +14,19 @@ import {
   Layers,
   Eye,
   Grid,
-  FileImage
+  FileImage,
+  IdCard,
+  Camera,
+  QrCode,
+  Box,
+  Maximize2, // Preview uchun
+  Minimize2 // Preview uchun
 } from 'lucide-react'
 import { useState, useContext, useEffect, useRef } from 'react'
 import Fetch from '../middlewares/fetcher'
 import { ContextData } from '../contextData/Context'
 import { motion, AnimatePresence } from 'framer-motion'
+import jsQR from 'jsqr'
 
 // Ranglar palettasi
 const COLOR_PALETTE = [
@@ -80,48 +87,212 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   })
 
   const [variants, setVariants] = useState([
-    { color: '', size: '', style: 'classic', images: [], count: 0 }
+    {
+      model: '', // Model maydoni qo'shildi
+      color: '',
+      size: '',
+      style: 'classic',
+      images: [],
+      count: 0
+    }
   ])
 
   const [mainImages, setMainImages] = useState([])
   const [loading, setLoading] = useState(false)
   const [imageUploading, setImageUploading] = useState(false)
   const [error, setError] = useState('')
-  const [currentStep, setCurrentStep] = useState(1) // 1: Asosiy, 2: Variantlar
-  const [selectedImages, setSelectedImages] = useState({}) // Variantlar uchun rasmlar
+  const [currentStep, setCurrentStep] = useState(1)
+  const [selectedImages, setSelectedImages] = useState({})
   const [showImagePreview, setShowImagePreview] = useState(null)
+
+  // QR Scanner states
+  const [showScanner, setShowScanner] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState('')
+  const [scanError, setScanError] = useState('')
+  const [scanningFor, setScanningFor] = useState('') // 'sku' yoki 'model'
+  const [cameraFullscreen, setCameraFullscreen] = useState(false) // Camera preview uchun
 
   const fileInputRef = useRef(null)
   const mainImagesInputRef = useRef(null)
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const scannerContainerRef = useRef(null)
+  const rafRef = useRef(null)
 
+  // Tarjimalar
   const categories = [
-    { value: 'sneakers', label: 'Sneakers' },
-    { value: 'boots', label: 'Boots' },
-    { value: 'heels', label: 'Heels' },
-    { value: 'sandals', label: 'Sandals' },
-    { value: 'slippers', label: 'Slippers' },
-    { value: 'shoes', label: 'Shoes' },
-    { value: 'other', label: 'Other' }
+    { value: 'sneakers', label: 'Сникерс' },
+    { value: 'boots', label: 'Этик' },
+    { value: 'heels', label: 'Каблук' },
+    { value: 'sandals', label: 'Сандал' },
+    { value: 'slippers', label: 'Тапоқ' },
+    { value: 'shoes', label: 'Оёқ кийим' },
+    { value: 'other', label: 'Бошқа' }
   ]
 
   const genders = [
-    { value: 'men', label: 'Men' },
-    { value: 'women', label: 'Women' },
-    { value: 'kids', label: 'Kids' },
-    { value: 'unisex', label: 'Unisex' }
+    { value: 'men', label: 'Эркак' },
+    { value: 'women', label: 'Аёл' },
+    { value: 'kids', label: 'Болалар' },
+    { value: 'unisex', label: 'Унисекс' }
   ]
 
   const seasons = [
-    { value: 'summer', label: 'Summer' },
-    { value: 'winter', label: 'Winter' },
-    { value: 'spring', label: 'Spring' },
-    { value: 'autumn', label: 'Autumn' },
-    { value: 'all', label: 'All Seasons' }
+    { value: 'summer', label: 'Ёз' },
+    { value: 'winter', label: 'Қиш' },
+    { value: 'spring', label: 'Баҳор' },
+    { value: 'autumn', label: 'Күз' },
+    { value: 'all', label: 'Барча фасл' }
   ]
+
+  // Scanner functions
+  const startScan = async (forWhat = 'sku') => {
+    try {
+      setScanningFor(forWhat)
+      setScanError('')
+      setScanResult('')
+      setCameraFullscreen(false)
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+      })
+
+      videoRef.current.srcObject = stream
+      videoRef.current.setAttribute('playsinline', true)
+      await videoRef.current.play()
+      setScanning(true)
+      scanLoop()
+    } catch (err) {
+      console.error('Camera error:', err)
+      setScanError('Камера очилмади. Илтимос, рухсат беринг.')
+    }
+  }
+
+  const stopScan = () => {
+    setScanning(false)
+    if (videoRef.current?.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(t => {
+        t.stop()
+      })
+      videoRef.current.srcObject = null
+    }
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+  }
+
+  const scanLoop = () => {
+    if (!videoRef.current || !canvasRef.current || !scanning) return
+
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      rafRef.current = requestAnimationFrame(scanLoop)
+      return
+    }
+
+    // Canvas o'lchamlarini video o'lchamlariga moslashtirish
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+    try {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const code = jsQR(imageData.data, canvas.width, canvas.height)
+
+      if (code?.data) {
+        setScanResult(code.data)
+
+        // Nima uchun scan qilinganligiga qarab malumotni joylashtirish
+        if (scanningFor === 'sku') {
+          setProductData(prev => ({ ...prev, sku: code.data }))
+        } else if (scanningFor === 'model') {
+          // Faqat joriy variant uchun modelni o'zgartirish
+          const newVariants = [...variants]
+          const lastIndex = newVariants.length - 1
+          if (lastIndex >= 0) {
+            newVariants[lastIndex].model = code.data
+            setVariants(newVariants)
+          }
+        }
+
+        // Scan qilinganidan keyin avtomatik stop
+        setTimeout(() => {
+          stopScan()
+          setShowScanner(false)
+        }, 1000)
+        return
+      }
+    } catch (err) {
+      console.error('QR scanning error:', err)
+    }
+
+    rafRef.current = requestAnimationFrame(scanLoop)
+  }
+
+  // Camera to'liq ekran rejimi
+  const toggleCameraFullscreen = () => {
+    if (!scannerContainerRef.current) return
+
+    if (!cameraFullscreen) {
+      if (scannerContainerRef.current.requestFullscreen) {
+        scannerContainerRef.current.requestFullscreen()
+      } else if (scannerContainerRef.current.webkitRequestFullscreen) {
+        scannerContainerRef.current.webkitRequestFullscreen()
+      } else if (scannerContainerRef.current.mozRequestFullScreen) {
+        scannerContainerRef.current.mozRequestFullScreen()
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen()
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen()
+      } else if (document.mozCancelFullScreen) {
+        document.mozCancelFullScreen()
+      }
+    }
+    setCameraFullscreen(!cameraFullscreen)
+  }
+
+  // Fullscreen o'zgarishlarini kuzatish
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setCameraFullscreen(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement
+      )
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      stopScan()
+    }
+  }, [])
 
   // 🔄 Asosiy maydonlarni o'zgartirish
   const handleChange = (field, value) => {
-    if (field === 'price' || field === 'sku') {
+    if (field === 'price') {
       const filtered = value.replace(/[^\d]/g, '')
       setProductData(prev => ({
         ...prev,
@@ -141,7 +312,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
     if (field === 'count') {
       newVariants[index][field] = Math.max(0, parseInt(value) || 0)
-    } else if (field === 'color' || field === 'size') {
+    } else if (field === 'color' || field === 'size' || field === 'model') {
       newVariants[index][field] = value.trim()
     } else {
       newVariants[index][field] = value
@@ -153,6 +324,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   // ➕ Yangi variant qo'shish
   const addVariant = () => {
     setVariants([...variants, {
+      model: '',
       color: '',
       size: '',
       style: 'classic',
@@ -174,7 +346,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     newVariants.splice(index, 1)
     setVariants(newVariants)
 
-    // Variant rasmlarini ham o'chirish
     setSelectedImages(prev => {
       const newSelected = { ...prev }
       delete newSelected[index]
@@ -196,10 +367,10 @@ export default function AddProductModal({ open, setOpen, mutate }) {
         }
       );
 
-      const data = await response.json(); // <- javobni JSON ga aylantirish
+      const data = await response.json();
 
       if (data && data.data && data.data.url) {
-        return data.data.url; // imgbb dan qaytadigan URL
+        return data.data.url;
       }
 
       throw new Error('Rasm yuklashda xatolik');
@@ -208,7 +379,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       throw error;
     }
   };
-
 
   // 📸 Asosiy rasmlarni yuklash
   const handleMainImagesUpload = async (e) => {
@@ -235,7 +405,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
           ...prev,
           mainImages: [...prev.mainImages, ...uploadedUrls]
         }))
-        // alert(`${uploadedUrls.length} та расм муваффақиятли юкланди!`)
       }
     } catch (error) {
       console.error('Umumiy rasm yuklashda xatolik:', error)
@@ -274,7 +443,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
         newVariants[variantIndex].images.push(...uploadedUrls)
         setVariants(newVariants)
 
-        // Preview uchun saqlash
         setSelectedImages(prev => ({
           ...prev,
           [variantIndex]: [...(prev[variantIndex] || []), ...uploadedUrls]
@@ -306,7 +474,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     newVariants[variantIndex].images = newVariants[variantIndex].images.filter((_, i) => i !== imageIndex)
     setVariants(newVariants)
 
-    // Preview ni ham yangilash
     setSelectedImages(prev => ({
       ...prev,
       [variantIndex]: (prev[variantIndex] || []).filter((_, i) => i !== imageIndex)
@@ -333,6 +500,11 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     for (let i = 0; i < variants.length; i++) {
       const variant = variants[i]
 
+      if (!variant.model.trim()) {
+        alert(`❌ ${i + 1}-вариант учун модель номини киритинг`)
+        return false
+      }
+
       if (!variant.color.trim()) {
         alert(`❌ ${i + 1}-вариант учун рангни киритинг`)
         return false
@@ -349,6 +521,15 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       }
     }
 
+    // Model nomlari takrorlanmasligi kerak
+    const modelNames = variants.map(v => v.model.trim()).filter(Boolean)
+    const uniqueModels = new Set(modelNames)
+
+    if (modelNames.length !== uniqueModels.size) {
+      alert('❌ Модель номлари такрорланмаслиги керак!')
+      return false
+    }
+
     return true
   }
 
@@ -358,11 +539,11 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
     setLoading(true)
     try {
-      // Payload tayyorlash
       const payload = {
         ...productData,
         price: Number(productData.price),
         types: variants.map(variant => ({
+          model: variant.model, // Model qo'shildi
           color: variant.color,
           size: variant.size,
           style: variant.style,
@@ -377,9 +558,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
         mutate()
         resetForm()
         setOpen(false)
-        // alert('✅ Маҳсулот муваффақиятли қўшилди')
-      } else {
-        // throw new Error(response.data.message || 'Server xatosi')
       }
     } catch (err) {
       console.error('Xatolik:', err)
@@ -407,11 +585,21 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       mainImages: [],
       types: []
     })
-    setVariants([{ color: '', size: '', style: 'classic', images: [], count: 0 }])
+    setVariants([{
+      model: '',
+      color: '',
+      size: '',
+      style: 'classic',
+      images: [],
+      count: 0
+    }])
     setMainImages([])
     setSelectedImages({})
     setCurrentStep(1)
     setError('')
+    setShowScanner(false)
+    setCameraFullscreen(false)
+    stopScan()
   }
 
   // Dark mode styles
@@ -458,7 +646,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       Янги маҳсулот қўшиш
                     </h2>
                     <p className={`text-sm ${textMuted} mt-2`}>
-                      {currentStep === 1 ? 'Асосий маълумотлар' : 'Вариантлар (ранг ва ўлчамлар)'}
+                      {currentStep === 1 ? 'Асосий маълумотлар' : 'Вариантлар (модель, ранг ва ўлчамлар)'}
                     </p>
                   </div>
                 </div>
@@ -545,6 +733,42 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       />
                     </div>
 
+                    {/* 📦 SKU with Scanner */}
+                    <div className='space-y-3'>
+                      <label className={`text-sm font-semibold flex items-center justify-between ${textColor}`}>
+                        <div className='flex items-center gap-2'>
+                          <IdCard size={16} className='text-blue-500' />
+                          SKU
+                        </div>
+                        <button
+                          type='button'
+                          onClick={() => setShowScanner(true)}
+                          className='flex items-center gap-1 px-3 py-1 text-xs rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors'
+                        >
+                          <QrCode size={12} />
+                          Сканер
+                        </button>
+                      </label>
+                      <div className='relative'>
+                        <input
+                          type='text'
+                          value={productData.sku}
+                          onChange={e => handleChange('sku', e.target.value)}
+                          className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-10 ${inputBg}`}
+                          placeholder='SKU'
+                        />
+                        {productData.sku && (
+                          <button
+                            type='button'
+                            onClick={() => handleChange('sku', '')}
+                            className='absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600'
+                          >
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
                     {/* 📂 Категория */}
                     <div className='space-y-3'>
                       <label className={`text-sm font-semibold ${textColor}`}>
@@ -598,6 +822,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         ))}
                       </select>
                     </div>
+
                   </div>
                   {/* Материал ва тавсиф */}
                   <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8'>
@@ -753,10 +978,10 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         </div>
                         <div>
                           <h3 className={`font-bold text-xl ${textColor}`}>
-                            Вариантлар (Ранг ва ўлчамлар)
+                            Вариантлар (Модель, ранг ва ўлчамлар)
                           </h3>
                           <p className={`text-sm ${textMuted}`}>
-                            Ҳар бир ранг-ўлчам жуфти учун алохида миқдор ва расм
+                            Ҳар бир модель ранг-ўлчам жуфти учун алохида миқдор ва расм
                           </p>
                         </div>
                       </div>
@@ -797,7 +1022,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                                 Вариант #{index + 1}
                               </h4>
                               <p className={`text-xs ${textMuted}`}>
-                                Ранг: {variant.color || '—'} | Ўлчам: {variant.size || '—'} | Сони: {variant.count}
+                                Модель: {variant.model || '—'} | Ранг: {variant.color || '—'} | Ўлчам: {variant.size || '—'} | Сони: {variant.count}
                               </p>
                             </div>
                           </div>
@@ -819,7 +1044,47 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         </div>
 
                         {/* Variant form */}
-                        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6'>
+                        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6'>
+                          {/* Модель номи */}
+                          <div className='space-y-3 lg:col-span-2'>
+                            <label className={`text-sm font-semibold flex items-center justify-between ${textColor}`}>
+                              <div className='flex items-center gap-2'>
+                                <Box size={16} className='text-purple-500' />
+                                Модель номи <span className='text-red-500'>*</span>
+                              </div>
+                              <button
+                                type='button'
+                                onClick={() => {
+                                  setScanningFor('model')
+                                  setShowScanner(true)
+                                }}
+                                className='flex items-center gap-1 px-2 py-1 text-xs rounded-lg bg-purple-500 hover:bg-purple-600 text-white transition-colors'
+                              >
+                                <QrCode size={10} />
+                                Сканер
+                              </button>
+                            </label>
+                            <div className='relative'>
+                              <input
+                                type='text'
+                                value={variant.model}
+                                onChange={e => handleVariantChange(index, 'model', e.target.value)}
+                                className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all ${inputBg}`}
+                                placeholder='Модель номи (масалан: Air Max 270)'
+                                required
+                              />
+                              {variant.model && (
+                                <button
+                                  type='button'
+                                  onClick={() => handleVariantChange(index, 'model', '')}
+                                  className='absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600'
+                                >
+                                  <X size={16} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
                           {/* Ранг */}
                           <div className='space-y-3'>
                             <label className={`text-sm font-semibold ${textColor}`}>
@@ -875,24 +1140,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                             </div>
                           </div>
 
-                          {/* Стиль */}
-                          <div className='space-y-3'>
-                            <label className={`text-sm font-semibold ${textColor}`}>
-                              Стиль
-                            </label>
-                            <select
-                              value={variant.style}
-                              onChange={e => handleVariantChange(index, 'style', e.target.value)}
-                              className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all ${inputBg}`}
-                            >
-                              {STYLE_OPTIONS.map(style => (
-                                <option key={style.value} value={style.value}>
-                                  {style.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
                           {/* Сони */}
                           <div className='space-y-3'>
                             <label className={`text-sm font-semibold ${textColor}`}>
@@ -926,6 +1173,24 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                               </div>
                             </div>
                           </div>
+                        </div>
+
+                        {/* Стиль (алохита қаторда) */}
+                        <div className='mt-4'>
+                          <label className={`text-sm font-semibold ${textColor}`}>
+                            Стиль
+                          </label>
+                          <select
+                            value={variant.style}
+                            onChange={e => handleVariantChange(index, 'style', e.target.value)}
+                            className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all mt-1 ${inputBg}`}
+                          >
+                            {STYLE_OPTIONS.map(style => (
+                              <option key={style.value} value={style.value}>
+                                {style.label}
+                              </option>
+                            ))}
+                          </select>
                         </div>
 
                         {/* Variant rasmlari */}
@@ -1011,6 +1276,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                   <div className='flex flex-col sm:flex-row justify-between gap-4 pt-6 border-t border-gray-200 dark:border-gray-700'>
                     <div className={`text-sm ${textMuted}`}>
                       Жами: {variants.length} та вариант |
+                      Уникал модельлар: {new Set(variants.map(v => v.model).filter(Boolean)).size} |
                       Дона: {variants.reduce((sum, v) => sum + (v.count || 0), 0)} |
                       Расм: {variants.reduce((sum, v) => sum + (v.images?.length || 0), 0)}
                     </div>
@@ -1064,12 +1330,12 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                   <p className='font-semibold mb-2'>📝 Эслатма:</p>
                   <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-left'>
                     <div className='space-y-1'>
-                      <li><span className='font-semibold'>Ном ва нарх</span> мажбурий майдонлар</li>
-                      <li>Ҳар бир вариант учун <span className='font-semibold'>ранг, ўлчам ва сони</span> мажбурий</li>
-                      <li>Расмлар серверга автомatik ravishda юкланadi</li>
+                      <li><span className='font-semibold'>Ном, нарх ва модель</span> мажбурий майдонлар</li>
+                      <li>Ҳар бир вариант учун <span className='font-semibold'>модель, ранг, ўлчам ва сони</span> мажбурий</li>
+                      <li>Модель номлари уникал бўлиши шарт</li>
                     </div>
                     <div className='space-y-1'>
-                      <li>SKU автогенерация қилинади (агар бўлмаса)</li>
+                      <li>SKU ва модель номи учун QR сканер ишлатиш мумкин</li>
                       <li>Сони 0 бўлса, маҳсулот сотилган деб ҳисобланади</li>
                       <li>Бир вариантнинг бир нечта расми бўлиши мумкин</li>
                     </div>
@@ -1078,6 +1344,218 @@ export default function AddProductModal({ open, setOpen, mutate }) {
               </div>
             </motion.div>
           </div>
+
+          {/* QR Scanner Modal */}
+          <AnimatePresence>
+            {showScanner && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className='fixed inset-0 bg-black/90 backdrop-blur-sm z-[101] flex items-center justify-center p-4'
+                onClick={() => {
+                  setShowScanner(false)
+                  stopScan()
+                }}
+              >
+                <motion.div
+                  initial={{ scale: 0.9 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0.9 }}
+                  ref={scannerContainerRef}
+                  className={`relative ${cameraFullscreen ? 'w-screen h-screen' : 'max-w-4xl w-full'} bg-gray-900 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300`}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className='p-4 sm:p-6 bg-gradient-to-r from-blue-700 to-blue-900'>
+                    <div className='flex items-center justify-between'>
+                      <div className='flex items-center gap-3'>
+                        <Camera className='h-6 w-6 text-white' />
+                        <h3 className='text-xl font-bold text-white'>
+                          QR код сканер {scanningFor === 'model' ? '(Модель)' : '(SKU)'}
+                        </h3>
+                      </div>
+                      <div className='flex items-center gap-2'>
+                        <button
+                          onClick={toggleCameraFullscreen}
+                          className='p-2 hover:bg-blue-800 rounded-lg transition-colors text-white'
+                          title={cameraFullscreen ? 'Кичрайтириш' : 'Катталаштириш'}
+                        >
+                          {cameraFullscreen ? (
+                            <Minimize2 className='h-5 w-5' />
+                          ) : (
+                            <Maximize2 className='h-5 w-5' />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowScanner(false)
+                            stopScan()
+                          }}
+                          className='p-2 hover:bg-blue-800 rounded-lg transition-colors'
+                        >
+                          <X className='h-5 w-5 text-white' />
+                        </button>
+                      </div>
+                    </div>
+                    <p className='text-blue-200 text-sm mt-2'>
+                      {scanningFor === 'model'
+                        ? 'Модель номи учун QR кодни камерага кўрсатинг'
+                        : 'SKU учун QR кодни камерага кўрсатинг'}
+                    </p>
+                  </div>
+
+                  <div className='p-4'>
+                    {scanError && (
+                      <div className='mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg'>
+                        <p className='text-red-300 text-sm'>{scanError}</p>
+                      </div>
+                    )}
+
+                    <div className='relative'>
+                      <div className='relative rounded-xl overflow-hidden bg-black'>
+                        <video
+                          ref={videoRef}
+                          className={`w-full ${cameraFullscreen ? 'h-[calc(100vh-180px)]' : 'h-[500px]'} object-cover`}
+                          playsInline
+                          autoPlay
+                          muted
+                        />
+
+                        {/* Scanning overlay */}
+                        {scanning && (
+                          <>
+                            {/* Scanner border */}
+                            <div className='absolute inset-0 border-2 border-blue-500/30 pointer-events-none'></div>
+
+                            {/* Center scanning area */}
+                            <div className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64'>
+                              {/* Corner borders */}
+                              <div className='absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-blue-500'></div>
+                              <div className='absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-blue-500'></div>
+                              <div className='absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-blue-500'></div>
+                              <div className='absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-blue-500'></div>
+
+                              {/* Scanning line */}
+                              <div className='absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent animate-scan'>
+                                <style jsx>{`
+                                  @keyframes scan {
+                                    0% { transform: translateY(0); }
+                                    50% { transform: translateY(256px); }
+                                    100% { transform: translateY(0); }
+                                  }
+                                  .animate-scan {
+                                    animation: scan 2s ease-in-out infinite;
+                                  }
+                                `}</style>
+                              </div>
+                            </div>
+
+                            {/* Instructions */}
+                            <div className='absolute bottom-4 left-0 right-0 text-center'>
+                              <div className='inline-block bg-black/70 text-white px-4 py-2 rounded-full text-sm'>
+                                📷 QR кодни марказга келтиринг
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Camera controls */}
+                        <div className='absolute bottom-4 right-4 flex items-center gap-2'>
+                          {!scanning && (
+                            <button
+                              onClick={() => startScan(scanningFor)}
+                              className='flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-medium transition-all hover:scale-105'
+                            >
+                              <Camera className='h-4 w-4' />
+                              Сканерни бошлаш
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <canvas
+                        ref={canvasRef}
+                        className='hidden'
+                      />
+                    </div>
+
+                    {scanResult && (
+                      <div className='mt-4 p-4 bg-green-900/30 border border-green-700 rounded-xl'>
+                        <div className='flex items-center justify-between'>
+                          <div>
+                            <p className='text-green-300 text-sm font-medium'>
+                              Муваффақиятли сканланди:
+                            </p>
+                            <p className='text-green-400 text-lg font-mono mt-1 break-all'>
+                              {scanResult}
+                            </p>
+                            <p className='text-green-400 text-xs mt-2'>
+                              {scanningFor === 'model'
+                                ? 'Модель майдонга автомат равишда киритилди'
+                                : 'SKU майдонга автомат равишда киритилди'}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setScanResult('')
+                              startScan(scanningFor)
+                            }}
+                            className='p-2 hover:bg-green-800 rounded-lg transition-colors'
+                            title='Янги скан'
+                          >
+                            <Camera className='h-5 w-5 text-green-300' />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className='mt-4 space-y-3'>
+                      <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+                        <div className='text-center p-3 bg-blue-900/30 rounded-lg'>
+                          <div className='text-blue-300 text-xs mb-1'>СКАНЕР ҲОЛАТИ</div>
+                          <div className='text-white font-medium'>
+                            {scanning ? (
+                              <span className='text-green-400'>🟢 Фаол</span>
+                            ) : (
+                              <span className='text-yellow-400'>🟡 Ҳозирланмоқда</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className='text-center p-3 bg-blue-900/30 rounded-lg'>
+                          <div className='text-blue-300 text-xs mb-1'>СКАНЕРА ОЧИШ</div>
+                          <button
+                            onClick={() => scanning ? stopScan() : startScan(scanningFor)}
+                            className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${scanning
+                              ? 'bg-red-500 hover:bg-red-600 text-white'
+                              : 'bg-blue-500 hover:bg-blue-600 text-white'
+                              }`}
+                          >
+                            {scanning ? 'Тўхтатиш' : 'Бошлаш'}
+                          </button>
+                        </div>
+
+                        <div className='text-center p-3 bg-blue-900/30 rounded-lg'>
+                          <div className='text-blue-300 text-xs mb-1'>КАМЕРА РЕЖИМИ</div>
+                          <div className='text-white font-medium'>
+                            {cameraFullscreen ? '📺 Тўлиқ экран' : '📱 Одатда'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className='text-center p-3 bg-gray-800/50 rounded-lg'>
+                        <p className='text-gray-400 text-sm'>
+                          📱 Камерани QR кодга қаратинг |
+                          🌟 Ёруғроқ жойда сканлаш маъқул |
+                          ⚡ Автоматик таниш
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Image Preview Modal */}
           <AnimatePresence>
@@ -1107,14 +1585,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                   >
                     <X size={20} />
                   </button>
-                  <a
-                    href={showImagePreview}
-                    download
-                    className='absolute top-4 left-4 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors'
-                    title='Юклаб олиш'
-                  >
-                    <Download className='h-5 w-5' />
-                  </a>
                 </motion.div>
               </motion.div>
             )}
@@ -1124,3 +1594,4 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     </AnimatePresence>
   )
 }
+

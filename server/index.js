@@ -10,6 +10,8 @@ import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import { getSystemHealth } from './controllers/health.js'
 import os from "os"
+import { bot } from './bot.js'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 dotenv.config()
@@ -43,7 +45,7 @@ app.use('/api/users', UserRoutes)
 app.use('/api/products', ProductRoutes)
 app.use('/api/orders', OrderRoutes)
 app.use('/api/health', getSystemHealth)
-app.get('/api/system', (req, res) => {
+app.get('/api/system', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'health.html'))
 })
 app.get('/api/about', (req, res) => {

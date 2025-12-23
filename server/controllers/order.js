@@ -1,5 +1,6 @@
 import Order from '../models/order.js'
 import Product from '../models/product.js'
+import Client from "../models/client.js"
 import { sendErrorResponse } from '../middlewares/sendErrorResponse.js'
 import { recordProductSale, revertProductSale } from './stats.js'
 
@@ -43,6 +44,71 @@ export const AllOrders = async (_, res) => {
 };
 
 
+const sendOrderNotification = async (order) => {
+  try {
+    const loggedUsers = await User.find({ isLoggedIn: true }).lean();
+    if (!loggedUsers.length) return;
+    if (!order.products || !order.products.length) return;
+
+    // Product IDларни йиғиб, уларни базадан олиш
+    const productIds = order.products.map(p => p.product);
+    const productsMap = {};
+    const productsFromDB = await Product.find({ _id: { $in: productIds } }).lean();
+    productsFromDB.forEach(p => { productsMap[p._id.toString()] = p; });
+
+    // Client ma'lumotini olish
+    let clientInfo = null;
+    if (order.client) {
+      clientInfo = await Client.findById(order.client).lean();
+    }
+
+    for (const user of loggedUsers) {
+      if (!user.telegramId) continue;
+
+      // Header
+      let message = `╔═══════════════════╗\n`;
+      message += `  📝 ЯНГИ БУЮРТМА          \n`;
+      message += `╚═══════════════════╝\n\n`;
+
+      // Client haqida
+      if (clientInfo) {
+        message += `👤 Мижоз: <b>${clientInfo.name || "Noma'lum"}</b>\n`;
+        if (clientInfo.phoneNumber) {
+          message += `📞 Телефон: <b>${clientInfo.phoneNumber}</b>\n`;
+        }
+        message += `\n`;
+      }
+
+      // Mahsulotlar ro'yxati
+      order.products.forEach((p, idx) => {
+        const productData = productsMap[p.product.toString()];
+        const title = productData?.title || "Noma'lum mahsulot";
+        const priceCurrency = productData?.priceType === 'uz' ? 'сўм' : '$';
+
+        message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
+        message += `   ├─ 📦 Миқдор: ${p.amount} ${p.unit || productData?.unit || ''}\n`;
+        message += `   ├─ 🔢 Дона: ${p.count || 0}\n`;
+        message += `   └─ 💰 Нархи: <b>Нарх белгиланмаган</b>\n\n`;
+      });
+
+      // Footer
+      message += `📊 <i>Умумий маҳсулотлар: ${order.products.length} та</i>`;
+      message += `\n🕒 ${new Date().toLocaleString('uz-UZ')}`;
+
+      await bot.telegram.sendMessage(
+        user.telegramId,
+        message,
+        {
+          parse_mode: "HTML",
+          disable_web_page_preview: true
+        }
+      );
+    }
+
+  } catch (err) {
+    console.error("Bot хабар юборишда хатолик:", err.message);
+  }
+};
 
 
 export const NewOrder = async (req, res) => {
@@ -58,7 +124,7 @@ export const NewOrder = async (req, res) => {
     }
 
     let clientToUse = null;
-    
+
     // 🔹 Client yaratish yoki mavjud clientni ishlatish
     if (clientId) {
       // Mavjud client ID kelsa
@@ -72,12 +138,12 @@ export const NewOrder = async (req, res) => {
       if (!client.phoneNumber || !client.name) {
         return sendErrorResponse(res, 400, "Янги мижоз учун телефон ва исм мажбурий!");
       }
-      
+
       // Telefon raqami bilan mavjud clientni tekshirish
-      const existingClientByPhone = await Client.findOne({ 
-        phoneNumber: client.phoneNumber 
+      const existingClientByPhone = await Client.findOne({
+        phoneNumber: client.phoneNumber
       });
-      
+
       if (existingClientByPhone) {
         // Mavjud client bor, o'shanini ishlatamiz
         clientToUse = existingClientByPhone._id;

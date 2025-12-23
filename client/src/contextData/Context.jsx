@@ -7,7 +7,7 @@ export const ContextProvider = ({ children }) => {
   const [openX, setOpenX] = useState(false)
   const [netErr, setNetErr] = useState(false)
   const [dark, setDark] = useState(() => {
-    return localStorage.getItem('dark') === 'true'
+    return localStorage.getItem('dark') === '!true'
   })
 
   useEffect(() => {
