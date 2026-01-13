@@ -79,7 +79,6 @@ const sendOrderNotification = async (order) => {
 
         message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
         message += `   ├─ 📦 Миқдор: ${p.quantity} Дона\n`;
-        message += `   ├─ 🔢 Дона: ${p.count || 0}\n`;
         message += `   └─ 💰 Нархи: <b>${p.price}</b>\n\n`;
       });
 

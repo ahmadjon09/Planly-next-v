@@ -20,8 +20,8 @@ const sendBotNotification = async (products) => {
       // Mahsulotlar ro'yxati
       products.forEach((product, index) => {
         message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
-        message += `   ├─ 📦 Миқдор: ${product.stock} ${product.unit || ''}\n`;
-        message += `   ├─ 🔢 Дона: ${product.count || 0}\n`;
+        message += `   ├─ 📦 Миқдор: ${product.count} Дона\n`;
+        // message += `   ├─ 🔢 Дона: ${product.count || 0}\n`;
       });
 
       // Footer qismi
