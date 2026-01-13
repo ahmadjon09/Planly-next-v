@@ -72,6 +72,7 @@ export const AddNewOrder = () => {
   const scannerContainerRef = useRef(null)
   const fileInputRef = useRef(null)
   const lastScannedRef = useRef(null)
+  const scannedOnceRef = useRef(false)
 
   // Client data
   const [clientData, setClientData] = useState({
@@ -257,11 +258,15 @@ export const AddNewOrder = () => {
   useEffect(() => {
     if (!scanning || !showScanner) return;
 
+    scannedOnceRef.current = false; // 🔁 har ochilganda reset
+
     const scanSound = new Audio(`data:audio/wav;base64,${scanned}`)
     let lastScanTime = 0;
-    const SCAN_COOLDOWN = 2000; // 2 секунд
+    const SCAN_COOLDOWN = 2000;
 
     const scanFrame = () => {
+      if (scannedOnceRef.current) return; // 🔒 1 martalik lock
+
       const video = videoRef.current;
       const canvas = canvasRef.current;
 
@@ -283,25 +288,31 @@ export const AddNewOrder = () => {
           const scannedData = code.data.trim();
           const now = Date.now();
 
-          // Cooldown check
-          if (scannedData !== lastScannedRef.current && now - lastScanTime > SCAN_COOLDOWN) {
+          if (
+            !scannedOnceRef.current &&
+            scannedData !== lastScannedRef.current &&
+            now - lastScanTime > SCAN_COOLDOWN
+          ) {
+            scannedOnceRef.current = true; // 🔒 LOCK
             lastScannedRef.current = scannedData;
             lastScanTime = now;
+
             setScanResult(scannedData);
-            stopScan()
-            setShowScanner(false)
             scanSound.volume = 1;
             scanSound.play().catch(() => { });
 
-            // Маҳсулотни қидириш
+            stopScan();
+            setShowScanner(false);
+
             handleScannerSearch(scannedData);
+            return;
           }
         }
       } catch (err) {
         console.error('QR scanning error:', err);
       }
 
-      if (scanning) {
+      if (scanning && !scannedOnceRef.current) {
         rafRef.current = requestAnimationFrame(scanFrame);
       }
     };
@@ -314,6 +325,7 @@ export const AddNewOrder = () => {
       }
     };
   }, [scanning, showScanner, handleScannerSearch]);
+
 
   // Camera to'liq ekran rejimi
   const toggleCameraFullscreen = () => {

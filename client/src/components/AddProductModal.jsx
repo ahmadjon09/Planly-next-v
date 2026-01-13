@@ -64,6 +64,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   const canvasRef = useRef(null)
   const scannerContainerRef = useRef(null)
   const rafRef = useRef(null)
+  const scannedRef = useRef(false)
 
   // Tarjimalar
   const categories = [
@@ -111,7 +112,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
         setProductData(prev => ({
           ...prev,
           title: response.data.product.title,
-          price: response.data.product.price.toString(),
           category: response.data.product.category,
           gender: response.data.product.gender,
           season: response.data.product.season,
@@ -190,44 +190,66 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   }
 
   const scanLoop = () => {
-    const scanSound = new Audio(`data:audio/wav;base64,${scanned}`)
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
+    if (scannedRef.current) return; // 🔒 1 martadan keyin to‘xtaydi
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas) {
+      rafRef.current = requestAnimationFrame(scanLoop);
+      return;
+    }
 
     if (video.videoWidth === 0 || video.videoHeight === 0) {
-      rafRef.current = requestAnimationFrame(scanLoop)
-      return
+      rafRef.current = requestAnimationFrame(scanLoop);
+      return;
     }
 
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      rafRef.current = requestAnimationFrame(scanLoop);
+      return;
+    }
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     try {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      const code = jsQR(imageData.data, canvas.width, canvas.height)
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      const code = jsQR(
+        imageData.data,
+        canvas.width,
+        canvas.height,
+        { inversionAttempts: "dontInvert" } // 🔥 MUHIM
+      );
 
       if (code?.data) {
-        setScanResult(code.data)
-        setProductData(prev => ({ ...prev, sku: code.data }))
-        scanSound.volume = 1
-        scanSound.play().catch(() => { })
+        scannedRef.current = true; // 🔒 LOCK
+
+        const scanSound = new Audio(`data:audio/wav;base64,${scanned}`);
+        scanSound.volume = 1;
+        scanSound.play().catch(() => { });
+
+        setScanResult(code.data);
+        setProductData(prev => ({ ...prev, sku: code.data }));
 
         setTimeout(() => {
-          stopScan()
-          setShowScanner(false)
-        }, 1000)
-        return
+          stopScan();
+          setShowScanner(false);
+        }, 500);
+
+        return;
       }
     } catch (err) {
-      console.error('QR scanning error:', err)
+      console.error('QR scanning error:', err);
     }
 
+    rafRef.current = requestAnimationFrame(scanLoop);
+  };
 
-    rafRef.current = requestAnimationFrame(scanLoop)
-  }
 
   // Camera to'liq ekran rejimi
   const toggleCameraFullscreen = () => {
@@ -570,7 +592,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       <p className='font-semibold text-green-600 dark:text-green-400 mb-2'>
                         ✅ Бу SKU билан маҳсулот омборда мавжуд
                       </p>
-                      <div className='grid grid-cols-2 gap-2 text-sm'>
+                      <div className='grid grid-cols-1 gap-2 md:grid-cols-2 text-sm'>
                         <div>
                           <span className='text-gray-600 dark:text-gray-400'>Номи:</span>
                           <span className='font-medium ml-2'>{existingProduct.title}</span>

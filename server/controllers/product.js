@@ -94,7 +94,7 @@ export const CreateNewProduct = async (req, res) => {
       description: data.description || "",
       count: incomingCount
     });
-    sendBotNotification(newProduct)
+    sendBotNotification([newProduct]);
     return res.status(201).json({
       message: "Маҳсулот муваффақиятли яратилди ✅",
       product: newProduct,

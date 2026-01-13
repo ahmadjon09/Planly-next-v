@@ -78,7 +78,7 @@ const sendOrderNotification = async (order) => {
 
 
         message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
-        message += `   ├─ 📦 Миқдор: ${p.amount} ${p.unit || productData?.unit || ''}\n`;
+        message += `   ├─ 📦 Миқдор: ${p.quantity} Дона\n`;
         message += `   ├─ 🔢 Дона: ${p.count || 0}\n`;
         message += `   └─ 💰 Нархи: <b>${p.price}</b>\n\n`;
       });
@@ -204,7 +204,7 @@ export const NewOrder = async (req, res) => {
       status,
       orderDate: new Date()
     }], { session });
-    sendOrderNotification(newOrder);
+    sendOrderNotification(newOrder[0]);
     await session.commitTransaction();
     session.endSession();
 
