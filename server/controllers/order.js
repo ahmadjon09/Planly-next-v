@@ -64,7 +64,7 @@ const sendOrderNotification = async (order) => {
 
       // Client haqida
       if (clientInfo) {
-        message += `👤 Мижоз: <b>${clientInfo.name || "?????"}</b>\n`;
+        message += `👤 Мижоз: <b>${clientInfo.fullName || "?????"}</b>\n`;
         if (clientInfo.phoneNumber) {
           message += `📞 Телефон: <b>${clientInfo.phoneNumber}</b>\n`;
         }

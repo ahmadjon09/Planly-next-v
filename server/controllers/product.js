@@ -22,7 +22,6 @@ const sendBotNotification = async (products) => {
         message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
         message += `   ├─ 📦 Миқдор: ${product.stock} ${product.unit || ''}\n`;
         message += `   ├─ 🔢 Дона: ${product.count || 0}\n`;
-        message += `   └─ 💰 Нархи: <b>${product.price} сўм</b>\n\n`;
       });
 
       // Footer qismi
