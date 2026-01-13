@@ -390,11 +390,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       return false
     }
 
-    if (!productData.price || Number(productData.price) <= 0) {
-      alert('❌ Нархни тўғри киритинг')
-      return false
-    }
-
     if (productData.count < 0) {
       alert('❌ Дона сонини тўғри киритинг')
       return false
@@ -439,7 +434,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
         payload = {
           title: productData.title,
           sku: productData.sku,
-          price: Number(productData.price),
           category: productData.category,
           gender: productData.gender,
           season: productData.season,
@@ -684,27 +678,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         required
                         disabled={skuStatus === 'exists'}
                       />
-                    </div>
-
-                    {/* 💰 Нархи */}
-                    <div className='space-y-3'>
-                      <label className={`text-sm font-semibold flex items-center gap-2 ${textColor}`}>
-                        <DollarSign size={16} className='text-green-500' />
-                        Нархи (сўм) <span className='text-red-500'>*</span>
-                      </label>
-                      <input
-                        type='text'
-                        value={formatPrice(productData.price)}
-                        onChange={e => {
-                          const numericValue = e.target.value.replace(/\D/g, "");
-                          handleChange('price', numericValue);
-                        }}
-                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
-                        placeholder='100 000'
-                        required
-                        readOnly={skuStatus === 'exists'}
-                      />
-
                     </div>
 
                     {/* 📦 Дона сони */}

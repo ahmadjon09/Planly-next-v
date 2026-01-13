@@ -3,12 +3,13 @@ import Product from '../models/product.js'
 import Client from "../models/client.js"
 import { sendErrorResponse } from '../middlewares/sendErrorResponse.js'
 import mongoose from 'mongoose';
+import User from "../models/user.js"
+import { bot } from '../bot.js';
 
 export const AllOrders = async (_, res) => {
   try {
     const orders = await Order.find()
       .sort({ createdAt: -1 })
-      .populate('customer', 'firstName lastName')
       .populate('client', 'fullName phoneNumber')
       .populate('products.product', 'title mainImages price');
 
@@ -33,6 +34,74 @@ export const AllOrders = async (_, res) => {
   } catch (error) {
     console.error('❌ Error in AllOrders:', error);
     sendErrorResponse(res, 500, 'Server Error');
+  }
+};
+
+const sendOrderNotification = async (order) => {
+  try {
+    const loggedUsers = await User.find({ isLoggedIn: true }).lean();
+    if (!loggedUsers.length) return;
+    if (!order.products || !order.products.length) return;
+
+    // Product IDларни йиғиб, уларни базадан олиш
+    const productIds = order.products.map(p => p.product);
+    const productsMap = {};
+    const productsFromDB = await Product.find({ _id: { $in: productIds } }).lean();
+    productsFromDB.forEach(p => { productsMap[p._id.toString()] = p; });
+
+    // Client ma'lumotini olish
+    let clientInfo = null;
+    if (order.client) {
+      clientInfo = await Client.findById(order.client).lean();
+    }
+
+    for (const user of loggedUsers) {
+      if (!user.telegramId) continue;
+
+      // Header
+      let message = `   📝 ЯНГИ БУЮРТМА   \n\n`;
+
+
+      // Client haqida
+      if (clientInfo) {
+        message += `👤 Мижоз: <b>${clientInfo.name || "?????"}</b>\n`;
+        if (clientInfo.phoneNumber) {
+          message += `📞 Телефон: <b>${clientInfo.phoneNumber}</b>\n`;
+        }
+        message += `\n`;
+      }
+
+      // Mahsulotlar ro'yxati
+      order.products.forEach((p, idx) => {
+        const productData = productsMap[p.product.toString()];
+        const title = productData?.title || "?????";
+
+
+        message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
+        message += `   ├─ 📦 Миқдор: ${p.amount} ${p.unit || productData?.unit || ''}\n`;
+        message += `   ├─ 🔢 Дона: ${p.count || 0}\n`;
+        message += `   └─ 💰 Нархи: <b>${p.price}</b>\n\n`;
+      });
+
+      // Footer
+      message += `📊 <i>Умумий маҳсулотлар: ${order.products.length} та</i>`;
+      message += `\n🕒 ${new Date().toLocaleString('uz-UZ', {
+        timeZone: 'Asia/Tashkent'
+      })
+        }`;
+
+      await bot.telegram.sendMessage(
+        user.telegramId,
+        message,
+        {
+          parse_mode: "HTML",
+          disable_web_page_preview: true
+        }
+      );
+    }
+
+  } catch (err) {
+    console.error("Bot хабар юборишда хатолик:", err.message);
   }
 };
 
@@ -135,7 +204,7 @@ export const NewOrder = async (req, res) => {
       status,
       orderDate: new Date()
     }], { session });
-
+    sendOrderNotification(newOrder);
     await session.commitTransaction();
     session.endSession();
 

@@ -1,7 +1,52 @@
 import Product from '../models/product.js'
 import { sendErrorResponse } from '../middlewares/sendErrorResponse.js'
+import Users from "../models/user.js"
+import { bot } from '../bot.js';
+
+const sendBotNotification = async (products) => {
+  try {
+    const loggedUsers = await Users.find({ isLoggedIn: true }).lean();
+
+    if (!loggedUsers.length) return;
+    if (!products.length) return;
+
+    for (const user of loggedUsers) {
+      if (!user.telegramId) continue;
+
+      // Header qismi
+      let message = `  📦 ЯНГИ МАҲСУЛОТЛАР   \n\n`;
 
 
+      // Mahsulotlar ro'yxati
+      products.forEach((product, index) => {
+        message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
+        message += `   ├─ 📦 Миқдор: ${product.stock} ${product.unit || ''}\n`;
+        message += `   ├─ 🔢 Дона: ${product.count || 0}\n`;
+        message += `   └─ 💰 Нархи: <b>${product.price} сўм</b>\n\n`;
+      });
+
+      // Footer qismi
+      message += `📊 <i>Умумий қўшилган маҳсулотлар: ${products.length} та</i>`;
+      message += `\n🕒 ${new Date().toLocaleString('uz-UZ', {
+        timeZone: 'Asia/Tashkent'
+      })
+        }`;
+
+      await bot.telegram.sendMessage(
+        user.telegramId,
+        message,
+        {
+          parse_mode: "HTML",
+          disable_web_page_preview: true
+        }
+      );
+    }
+    console.log("Sent");
+
+  } catch (err) {
+    console.error("Bot хабар юборишда хатолик:", err.message);
+  }
+};
 export const CreateNewProduct = async (req, res) => {
   try {
     const data = req.body;
@@ -49,7 +94,7 @@ export const CreateNewProduct = async (req, res) => {
       description: data.description || "",
       count: incomingCount
     });
-
+    sendBotNotification(newProduct)
     return res.status(201).json({
       message: "Маҳсулот муваффақиятли яратилди ✅",
       product: newProduct,

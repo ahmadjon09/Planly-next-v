@@ -283,7 +283,7 @@ export const Orders = () => {
               )}
               <div>
                 <h1 className='text-2xl md:text-3xl font-bold text-gray-800'>
-                  {selectedClient ? `${selectedClient.fullName} чиқимлари` : 'Мижозлар'}
+                  {selectedClient ? `${selectedClient.fullName} ҳаридлари` : 'Мижозлар'}
                 </h1>
                 <p className='text-gray-600 mt-1'>
                   {selectedClient
