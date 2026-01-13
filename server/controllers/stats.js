@@ -1,199 +1,70 @@
-import History from '../models/history.js';
+// controllers/historyController.js
+import mongoose from "mongoose";
+import Order from '../models/order.js';
 import Product from '../models/product.js';
 import { sendErrorResponse } from '../middlewares/sendErrorResponse.js';
 
-// 🔹 Product sotishda avtomatik tarix yozish (Order controller'ida ishlatish uchun)
-export const recordProductSale = async (productId, variant, quantity) => {
-    try {
-        const now = new Date();
-        const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-        // Tarixda bor yoki yo'qligini tekshirish
-        let history = await History.findOne({
-            product: productId,
-            "variant.color": variant.color,
-            "variant.size": variant.size,
-            "variant.style": variant.style,
-            month: month
-        });
-
-        if (history) {
-            // Mavjud bo'lsa, yangilash
-            history.soldCount += quantity;
-            await history.save();
-        } else {
-            // Yangi yaratish
-            history = await History.create({
-                product: productId,
-                variant: {
-                    color: variant.color,
-                    size: variant.size,
-                    style: variant.style
-                },
-                soldCount: quantity,
-                month: month
-            });
-        }
-
-        return history;
-    } catch (error) {
-        console.error('❌ Tarix yozishda xatolik:', error);
-        throw error;
-    }
-};
-
-// 🔹 Order bekor qilinganda tarixni tuzatish
-export const revertProductSale = async (productId, variant, quantity) => {
-    try {
-        const now = new Date();
-        const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-        const history = await History.findOne({
-            product: productId,
-            "variant.color": variant.color,
-            "variant.size": variant.size,
-            "variant.style": variant.style,
-            month: month
-        });
-
-        if (history) {
-            history.soldCount = Math.max(0, history.soldCount - quantity);
-
-            if (history.soldCount === 0) {
-                await history.deleteOne();
-            } else {
-                await history.save();
-            }
-        }
-
-        return history;
-    } catch (error) {
-        console.error('❌ Tarixni tuzatishda xatolik:', error);
-        throw error;
-    }
-};
-
-// 🔹 Order controller'larini yangilash (tarix bilan ishlash uchun)
-
-// NewOrder controller'ida:
-export const NewOrder = async (req, res) => {
-    try {
-        // ... oldingi kodlar
-
-        // 🔹 Stock (count) larni kamaytirish VA tarix yozish
-        for (const item of products) {
-            const product = await Product.findById(item.product);
-            const variantIndex = product.types.findIndex(t =>
-                t.color === item.variant.color &&
-                t.size === item.variant.size &&
-                t.style === item.variant.style
-            );
-
-            if (variantIndex !== -1) {
-                // Stock ni kamaytirish
-                product.types[variantIndex].count -= item.quantity;
-                product.sold += item.quantity;
-                await product.save();
-
-                // 🔹 Tarixga yozish
-                await recordProductSale(
-                    item.product,
-                    item.variant,
-                    item.quantity
-                );
-            }
-        }
-
-        // ... qolgan kodlar
-    } catch (error) {
-        // ... error handling
-    }
-};
-
-// CancelOrder controller'ida:
-export const CancelOrder = async (req, res) => {
-    try {
-        // ... oldingi kodlar
-
-        // 🔹 Stock (count) larni qaytarish VA tarixni tuzatish
-        for (const item of order.products) {
-            const product = await Product.findById(item.product);
-            if (product && product.types[item.variantIndex]) {
-                // Stock ni qaytarish
-                product.types[item.variantIndex].count += item.quantity;
-                product.sold = Math.max(0, product.sold - item.quantity);
-                await product.save();
-
-                // 🔹 Tarixni tuzatish
-                await revertProductSale(
-                    item.product,
-                    item.variant,
-                    item.quantity
-                );
-            }
-        }
-
-        // ... qolgan kodlar
-    } catch (error) {
-        // ... error handling
-    }
-};
-
-// 🔹 STATISTIKA CONTROLLER'LARI
+// ========== DINAMIK STATISTIKA FUNKSIYALARI ==========
 
 // 1. MAHSULOT BO'YICHA SOTUV STATISTIKASI
 export const getProductSalesStats = async (req, res) => {
     try {
-        const { productId, year, month, limit = 10 } = req.query;
+        const { productId, startDate, endDate, limit = 10 } = req.query;
 
-        let matchStage = {};
+        let matchStage = {
+            status: { $in: ["delivered", "completed"] }
+        };
 
         if (productId) {
-            matchStage.product = new mongoose.Types.ObjectId(productId);
+            matchStage["products.product"] = new mongoose.Types.ObjectId(productId);
         }
 
-        if (year && month) {
-            matchStage.month = `${year}-${month.padStart(2, '0')}`;
-        } else if (year) {
-            matchStage.month = { $regex: `^${year}-` };
+        // Sanalar filteri
+        if (startDate || endDate) {
+            matchStage.createdAt = {};
+            if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+            if (endDate) matchStage.createdAt.$lte = new Date(endDate);
         }
 
-        const stats = await History.aggregate([
+        const stats = await Order.aggregate([
             { $match: matchStage },
+            { $unwind: "$products" },
             {
                 $group: {
-                    _id: {
-                        product: "$product",
-                        color: "$variant.color",
-                        size: "$variant.size",
-                        style: "$variant.style",
-                        month: "$month"
-                    },
-                    totalSold: { $sum: "$soldCount" },
-                    recordsCount: { $sum: 1 }
+                    _id: "$products.product",
+                    totalSold: { $sum: "$products.quantity" },
+                    totalRevenue: { $sum: { $multiply: ["$products.price", "$products.quantity"] } },
+                    orderCount: { $sum: 1 },
+                    avgPrice: { $avg: "$products.price" }
                 }
             },
             {
                 $lookup: {
                     from: "products",
-                    localField: "_id.product",
+                    localField: "_id",
                     foreignField: "_id",
                     as: "productInfo"
                 }
             },
-            { $unwind: "$productInfo" },
+            { $unwind: { path: "$productInfo", preserveNullAndEmptyArrays: true } },
             {
                 $project: {
                     _id: 0,
-                    productId: "$_id.product",
+                    productId: "$_id",
                     productTitle: "$productInfo.title",
-                    color: "$_id.color",
-                    size: "$_id.size",
-                    style: "$_id.style",
-                    month: "$_id.month",
+                    productSku: "$productInfo.sku",
                     totalSold: 1,
-                    recordsCount: 1,
-                    mainImage: { $arrayElemAt: ["$productInfo.mainImages", 0] }
+                    totalRevenue: 1,
+                    orderCount: 1,
+                    avgPrice: 1,
+                    avgOrderQuantity: { $divide: ["$totalSold", "$orderCount"] },
+                    mainImage: { $arrayElemAt: ["$productInfo.mainImages", 0] },
+                    category: "$productInfo.category",
+                    gender: "$productInfo.gender",
+                    sizes: "$productInfo.sizes",
+                    season: "$productInfo.season",
+                    count: "$productInfo.count",
+                    isAvailable: "$productInfo.isAvailable"
                 }
             },
             { $sort: { totalSold: -1 } },
@@ -215,40 +86,185 @@ export const getProductSalesStats = async (req, res) => {
 // 2. OYLIK SOTUV STATISTIKASI
 export const getMonthlySalesStats = async (req, res) => {
     try {
-        const { year, groupBy = 'month' } = req.query;
+        const { year, month, groupBy = 'month', limit = 12 } = req.query;
 
-        let matchStage = {};
-        let groupStage = {};
+        let matchStage = {
+            status: { $in: ["delivered", "completed"] }
+        };
 
+        // Yil va oy filteri
         if (year) {
-            matchStage.month = { $regex: `^${year}-` };
+            const startDate = new Date(`${year}-01-01`);
+            const endDate = new Date(`${parseInt(year) + 1}-01-01`);
+            matchStage.createdAt = { $gte: startDate, $lt: endDate };
+        }
+
+        if (month) {
+            const [year, monthNum] = month.split('-');
+            const startDate = new Date(year, monthNum - 1, 1);
+            const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+            matchStage.createdAt = { $gte: startDate, $lte: endDate };
         }
 
         if (groupBy === 'month') {
-            groupStage = {
-                _id: "$month",
-                totalSales: { $sum: "$soldCount" },
-                uniqueProducts: { $addToSet: "$product" },
-                transactions: { $sum: 1 }
-            };
-        } else if (groupBy === 'product') {
-            groupStage = {
-                _id: "$product",
-                totalSales: { $sum: "$soldCount" },
-                monthsActive: { $addToSet: "$month" },
-                variantsSold: {
-                    $addToSet: {
-                        color: "$variant.color",
-                        size: "$variant.size",
-                        style: "$variant.style"
+            const stats = await Order.aggregate([
+                { $match: matchStage },
+                {
+                    $group: {
+                        _id: {
+                            year: { $year: "$createdAt" },
+                            month: { $month: "$createdAt" }
+                        },
+                        totalRevenue: { $sum: "$total" },
+                        totalItems: { $sum: { $size: "$products" } },
+                        orderCount: { $sum: 1 },
+                        uniqueProducts: { $addToSet: "$products.product" },
+                        avgOrderValue: { $avg: "$total" }
                     }
-                }
-            };
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        year: "$_id.year",
+                        month: "$_id.month",
+                        period: {
+                            $concat: [
+                                { $toString: "$_id.year" },
+                                "-",
+                                { $toString: { $cond: { if: { $lt: ["$_id.month", 10] }, then: { $concat: ["0", { $toString: "$_id.month" }] }, else: { $toString: "$_id.month" } } } }
+                            ]
+                        },
+                        totalRevenue: 1,
+                        totalItems: 1,
+                        orderCount: 1,
+                        uniqueProductsCount: { $size: "$uniqueProducts" },
+                        avgOrderValue: 1
+                    }
+                },
+                { $sort: { year: 1, month: 1 } },
+                { $limit: parseInt(limit) }
+            ]);
+
+            return res.status(200).json({
+                success: true,
+                data: stats,
+                groupBy: groupBy
+            });
+        }
+        else if (groupBy === 'product') {
+            const stats = await Order.aggregate([
+                { $match: matchStage },
+                { $unwind: "$products" },
+                {
+                    $group: {
+                        _id: "$products.product",
+                        totalSold: { $sum: "$products.quantity" },
+                        totalRevenue: { $sum: { $multiply: ["$products.price", "$products.quantity"] } },
+                        orderCount: { $sum: 1 }
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "products",
+                        localField: "_id",
+                        foreignField: "_id",
+                        as: "productInfo"
+                    }
+                },
+                { $unwind: { path: "$productInfo", preserveNullAndEmptyArrays: true } },
+                {
+                    $project: {
+                        _id: 0,
+                        productId: "$_id",
+                        productTitle: "$productInfo.title",
+                        productSku: "$productInfo.sku",
+                        totalSold: 1,
+                        totalRevenue: 1,
+                        orderCount: 1,
+                        avgSalePerOrder: { $divide: ["$totalSold", "$orderCount"] },
+                        category: "$productInfo.category",
+                        mainImage: { $arrayElemAt: ["$productInfo.mainImages", 0] }
+                    }
+                },
+                { $sort: { totalSold: -1 } },
+                { $limit: parseInt(limit) }
+            ]);
+
+            return res.status(200).json({
+                success: true,
+                data: stats,
+                groupBy: groupBy
+            });
         }
 
-        const stats = await History.aggregate([
+    } catch (error) {
+        console.error('❌ Oylik statistika olishda xatolik:', error);
+        sendErrorResponse(res, 500, 'Oylik statistika olishda xatolik');
+    }
+};
+
+// 3. ENG KO'P SOTILADIGAN MAHSULOTLAR
+export const getTopProducts = async (req, res) => {
+    try {
+        const { limit = 10, period = 'all', startDate, endDate } = req.query;
+
+        let matchStage = {
+            status: { $in: ["delivered", "completed"] }
+        };
+
+        const now = new Date();
+
+        if (period === 'today') {
+            const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+            matchStage.createdAt = { $gte: startDate, $lt: endDate };
+        } else if (period === 'yesterday') {
+            const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            matchStage.createdAt = { $gte: startDate, $lt: endDate };
+        } else if (period === 'thisWeek') {
+            const startDate = new Date(now.setDate(now.getDate() - now.getDay()));
+            const endDate = new Date(startDate);
+            endDate.setDate(startDate.getDate() + 7);
+            matchStage.createdAt = { $gte: startDate, $lt: endDate };
+        } else if (period === 'lastWeek') {
+            const startDate = new Date(now.setDate(now.getDate() - now.getDay() - 7));
+            const endDate = new Date(startDate);
+            endDate.setDate(startDate.getDate() + 7);
+            matchStage.createdAt = { $gte: startDate, $lt: endDate };
+        } else if (period === 'thisMonth') {
+            const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+            matchStage.createdAt = { $gte: startDate, $lte: endDate };
+        } else if (period === 'lastMonth') {
+            const startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+            matchStage.createdAt = { $gte: startDate, $lte: endDate };
+        } else if (period === 'thisYear') {
+            const startDate = new Date(now.getFullYear(), 0, 1);
+            const endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+            matchStage.createdAt = { $gte: startDate, $lte: endDate };
+        }
+
+        // Custom date range
+        if (startDate || endDate) {
+            matchStage.createdAt = {};
+            if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+            if (endDate) matchStage.createdAt.$lte = new Date(endDate);
+        }
+
+        const topProducts = await Order.aggregate([
             { $match: matchStage },
-            { $group: groupStage },
+            { $unwind: "$products" },
+            {
+                $group: {
+                    _id: "$products.product",
+                    totalSold: { $sum: "$products.quantity" },
+                    totalRevenue: { $sum: { $multiply: ["$products.price", "$products.quantity"] } },
+                    orderCount: { $sum: 1 },
+                    avgPrice: { $avg: "$products.price" }
+                }
+            },
             {
                 $lookup: {
                     from: "products",
@@ -257,91 +273,25 @@ export const getMonthlySalesStats = async (req, res) => {
                     as: "productInfo"
                 }
             },
-            {
-                $project: {
-                    _id: 1,
-                    totalSales: 1,
-                    ...(groupBy === 'month' ? {
-                        uniqueProductsCount: { $size: "$uniqueProducts" },
-                        transactions: 1
-                    } : {
-                        productTitle: { $arrayElemAt: ["$productInfo.title", 0] },
-                        monthsActiveCount: { $size: "$monthsActive" },
-                        variantsCount: { $size: "$variantsSold" }
-                    })
-                }
-            },
-            { $sort: { totalSales: -1 } }
-        ]);
-
-        return res.status(200).json({
-            success: true,
-            data: stats,
-            groupBy: groupBy
-        });
-
-    } catch (error) {
-        console.error('❌ Oylik statistika olishda xatolik:', error);
-        sendErrorResponse(res, 500, 'Oylik statistika olishda xatolik');
-    }
-};
-
-// 3. ENG KO'P SOTILADIGAN VARIANTLAR
-export const getTopVariants = async (req, res) => {
-    try {
-        const { limit = 5, period = 'all' } = req.query;
-        const now = new Date();
-
-        let matchStage = {};
-
-        if (period === 'currentMonth') {
-            const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-            matchStage.month = currentMonth;
-        } else if (period === 'currentYear') {
-            matchStage.month = { $regex: `^${now.getFullYear()}-` };
-        } else if (period === 'lastMonth') {
-            const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-            const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
-            matchStage.month = lastMonthStr;
-        }
-
-        const topVariants = await History.aggregate([
-            { $match: matchStage },
-            {
-                $group: {
-                    _id: {
-                        product: "$product",
-                        color: "$variant.color",
-                        size: "$variant.size",
-                        style: "$variant.style"
-                    },
-                    totalSold: { $sum: "$soldCount" },
-                    monthsActive: { $addToSet: "$month" }
-                }
-            },
-            {
-                $lookup: {
-                    from: "products",
-                    localField: "_id.product",
-                    foreignField: "_id",
-                    as: "productInfo"
-                }
-            },
-            { $unwind: "$productInfo" },
+            { $unwind: { path: "$productInfo", preserveNullAndEmptyArrays: true } },
             {
                 $project: {
                     _id: 0,
-                    productId: "$_id.product",
+                    productId: "$_id",
                     productTitle: "$productInfo.title",
-                    color: "$_id.color",
-                    size: "$_id.size",
-                    style: "$_id.style",
+                    productSku: "$productInfo.sku",
                     totalSold: 1,
-                    monthsActiveCount: { $size: "$monthsActive" },
-                    avgMonthlySales: { $divide: ["$totalSold", { $size: "$monthsActive" }] },
-                    mainImage: { $arrayElemAt: ["$productInfo.mainImages", 0] },
+                    totalRevenue: 1,
+                    orderCount: 1,
+                    avgPrice: 1,
+                    avgSalePerOrder: { $divide: ["$totalSold", "$orderCount"] },
                     category: "$productInfo.category",
-                    gender: "$productInfo.gender"
+                    gender: "$productInfo.gender",
+                    sizes: "$productInfo.sizes",
+                    season: "$productInfo.season",
+                    count: "$productInfo.count",
+                    isAvailable: "$productInfo.isAvailable",
+                    mainImage: { $arrayElemAt: ["$productInfo.mainImages", 0] }
                 }
             },
             { $sort: { totalSold: -1 } },
@@ -350,14 +300,16 @@ export const getTopVariants = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            data: topVariants,
+            data: topProducts,
             period: period,
-            totalVariants: topVariants.length
+            totalProducts: topProducts.length,
+            totalSold: topProducts.reduce((sum, item) => sum + item.totalSold, 0),
+            totalRevenue: topProducts.reduce((sum, item) => sum + item.totalRevenue, 0)
         });
 
     } catch (error) {
-        console.error('❌ Top variantlarni olishda xatolik:', error);
-        sendErrorResponse(res, 500, 'Top variantlarni olishda xatolik');
+        console.error('❌ Top mahsulotlarni olishda xatolik:', error);
+        sendErrorResponse(res, 500, 'Top mahsulotlarni olishda xatolik');
     }
 };
 
@@ -366,85 +318,180 @@ export const getSalesTrend = async (req, res) => {
     try {
         const { startDate, endDate, interval = 'monthly' } = req.query;
 
-        let matchStage = {};
-        let groupStage = {};
-        let sortStage = { _id: 1 };
+        let matchStage = {
+            status: { $in: ["delivered", "completed"] }
+        };
 
-        // Sanalarni formatlash
-        if (startDate && endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-
-            const startMonth = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
-            const endMonth = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`;
-
-            matchStage.month = { $gte: startMonth, $lte: endMonth };
+        // Sanalar filteri
+        if (startDate || endDate) {
+            matchStage.createdAt = {};
+            if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+            if (endDate) matchStage.createdAt.$lte = new Date(endDate);
+        } else {
+            // Default: oxirgi 12 oy
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 12);
+            matchStage.createdAt = { $gte: startDate, $lte: endDate };
         }
 
-        // Interval bo'yicha gruppalash
-        if (interval === 'monthly') {
-            groupStage = {
-                _id: "$month",
-                totalSales: { $sum: "$soldCount" },
-                uniqueProducts: { $addToSet: "$product" },
-                totalTransactions: { $sum: 1 }
-            };
-        } else if (interval === 'quarterly') {
+        let groupStage = {};
+        let projectStage = {};
+        let sortStage = {};
+
+        if (interval === 'daily') {
             groupStage = {
                 _id: {
-                    year: { $substr: ["$month", 0, 4] },
-                    quarter: {
-                        $switch: {
-                            branches: [
-                                { case: { $in: [{ $substr: ["$month", 5, 2] }, ["01", "02", "03"]] }, then: "Q1" },
-                                { case: { $in: [{ $substr: ["$month", 5, 2] }, ["04", "05", "06"]] }, then: "Q2" },
-                                { case: { $in: [{ $substr: ["$month", 5, 2] }, ["07", "08", "09"]] }, then: "Q3" },
-                                { case: { $in: [{ $substr: ["$month", 5, 2] }, ["10", "11", "12"]] }, then: "Q4" }
-                            ],
-                            default: "Unknown"
-                        }
-                    }
+                    year: { $year: "$createdAt" },
+                    month: { $month: "$createdAt" },
+                    day: { $dayOfMonth: "$createdAt" }
                 },
-                totalSales: { $sum: "$soldCount" },
-                uniqueProducts: { $addToSet: "$product" },
-                months: { $addToSet: "$month" }
-            };
-            sortStage = { "_id.year": 1, "_id.quarter": 1 };
-        } else if (interval === 'yearly') {
-            groupStage = {
-                _id: { $substr: ["$month", 0, 4] },
-                totalSales: { $sum: "$soldCount" },
-                uniqueProducts: { $addToSet: "$product" },
-                monthsActive: { $addToSet: "$month" }
-            };
-        }
-
-        const trend = await History.aggregate([
-            { $match: matchStage },
-            { $group: groupStage },
-            {
-                $project: {
-                    period: "$_id",
-                    totalSales: 1,
-                    uniqueProductsCount: { $size: "$uniqueProducts" },
-                    ...(interval === 'monthly' && { transactions: "$totalTransactions" }),
-                    ...(interval === 'quarterly' && { monthsCount: { $size: "$months" } }),
-                    ...(interval === 'yearly' && { monthsCount: { $size: "$monthsActive" } }),
-                    averageMonthlySales: {
-                        $cond: {
-                            if: { $eq: [interval, 'yearly'] },
-                            then: { $divide: ["$totalSales", { $size: "$monthsActive" }] },
-                            else: null
+                totalRevenue: { $sum: "$total" },
+                totalItems: { $sum: { $size: "$products" } },
+                orderCount: { $sum: 1 },
+                totalSold: {
+                    $sum: {
+                        $reduce: {
+                            input: "$products",
+                            initialValue: 0,
+                            in: { $add: ["$$value", "$$this.quantity"] }
                         }
                     }
                 }
-            },
+            };
+            projectStage = {
+                _id: 0,
+                date: {
+                    $dateFromParts: {
+                        year: "$_id.year",
+                        month: "$_id.month",
+                        day: "$_id.day"
+                    }
+                },
+                period: {
+                    $concat: [
+                        { $toString: "$_id.day" },
+                        ".",
+                        { $toString: "$_id.month" },
+                        ".",
+                        { $toString: "$_id.year" }
+                    ]
+                },
+                totalRevenue: 1,
+                totalItems: 1,
+                totalSold: 1,
+                orderCount: 1,
+                avgOrderValue: { $divide: ["$totalRevenue", "$orderCount"] }
+            };
+            sortStage = { date: 1 };
+        }
+        else if (interval === 'weekly') {
+            groupStage = {
+                _id: {
+                    year: { $year: "$createdAt" },
+                    week: { $week: "$createdAt" }
+                },
+                totalRevenue: { $sum: "$total" },
+                totalItems: { $sum: { $size: "$products" } },
+                orderCount: { $sum: 1 }
+            };
+            projectStage = {
+                _id: 0,
+                week: "$_id.week",
+                year: "$_id.year",
+                period: {
+                    $concat: [
+                        { $toString: "$_id.year" },
+                        "-W",
+                        { $toString: "$_id.week" }
+                    ]
+                },
+                totalRevenue: 1,
+                totalItems: 1,
+                orderCount: 1,
+                avgDailySales: { $divide: ["$totalRevenue", 7] }
+            };
+            sortStage = { year: 1, week: 1 };
+        }
+        else if (interval === 'monthly') {
+            groupStage = {
+                _id: {
+                    year: { $year: "$createdAt" },
+                    month: { $month: "$createdAt" }
+                },
+                totalRevenue: { $sum: "$total" },
+                totalItems: { $sum: { $size: "$products" } },
+                orderCount: { $sum: 1 },
+                totalSold: {
+                    $sum: {
+                        $reduce: {
+                            input: "$products",
+                            initialValue: 0,
+                            in: { $add: ["$$value", "$$this.quantity"] }
+                        }
+                    }
+                }
+            };
+            projectStage = {
+                _id: 0,
+                year: "$_id.year",
+                month: "$_id.month",
+                period: {
+                    $concat: [
+                        { $toString: "$_id.year" },
+                        "-",
+                        { $toString: { $cond: { if: { $lt: ["$_id.month", 10] }, then: { $concat: ["0", { $toString: "$_id.month" }] }, else: { $toString: "$_id.month" } } } }
+                    ]
+                },
+                totalRevenue: 1,
+                totalItems: 1,
+                totalSold: 1,
+                orderCount: 1,
+                avgOrderValue: { $divide: ["$totalRevenue", "$orderCount"] },
+                avgItemsPerOrder: { $divide: ["$totalItems", "$orderCount"] }
+            };
+            sortStage = { year: 1, month: 1 };
+        }
+        else if (interval === 'yearly') {
+            groupStage = {
+                _id: { $year: "$createdAt" },
+                totalRevenue: { $sum: "$total" },
+                totalItems: { $sum: { $size: "$products" } },
+                orderCount: { $sum: 1 }
+            };
+            projectStage = {
+                _id: 0,
+                year: "$_id",
+                period: { $toString: "$_id" },
+                totalRevenue: 1,
+                totalItems: 1,
+                orderCount: 1,
+                avgMonthlyRevenue: { $divide: ["$totalRevenue", 12] }
+            };
+            sortStage = { year: 1 };
+        }
+
+        const trend = await Order.aggregate([
+            { $match: matchStage },
+            { $group: groupStage },
+            { $project: projectStage },
             { $sort: sortStage }
         ]);
+
+        // Trend analysis
+        const analysis = {
+            totalPeriods: trend.length,
+            totalRevenue: trend.reduce((sum, item) => sum + item.totalRevenue, 0),
+            totalOrders: trend.reduce((sum, item) => sum + item.orderCount, 0),
+            averageRevenue: trend.length > 0 ? trend.reduce((sum, item) => sum + item.totalRevenue, 0) / trend.length : 0,
+            bestPeriod: trend.reduce((best, current) => current.totalRevenue > best.totalRevenue ? current : trend[0], trend[0] || {}),
+            worstPeriod: trend.reduce((worst, current) => current.totalRevenue < worst.totalRevenue ? current : trend[0], trend[0] || {})
+        };
 
         return res.status(200).json({
             success: true,
             data: trend,
+            analysis: analysis,
             interval: interval,
             totalPeriods: trend.length
         });
@@ -458,19 +505,26 @@ export const getSalesTrend = async (req, res) => {
 // 5. CATEGORY/GENDER/SEASON BO'YICHA STATISTIKA
 export const getCategoryStats = async (req, res) => {
     try {
-        const { by = 'category', year } = req.query;
+        const { by = 'category', startDate, endDate } = req.query;
 
-        let matchStage = {};
-        if (year) {
-            matchStage.month = { $regex: `^${year}-` };
+        let matchStage = {
+            status: { $in: ["delivered", "completed"] }
+        };
+
+        // Sanalar filteri
+        if (startDate || endDate) {
+            matchStage.createdAt = {};
+            if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+            if (endDate) matchStage.createdAt.$lte = new Date(endDate);
         }
 
-        const stats = await History.aggregate([
+        const stats = await Order.aggregate([
             { $match: matchStage },
+            { $unwind: "$products" },
             {
                 $lookup: {
                     from: "products",
-                    localField: "product",
+                    localField: "products.product",
                     foreignField: "_id",
                     as: "productInfo"
                 }
@@ -478,41 +532,54 @@ export const getCategoryStats = async (req, res) => {
             { $unwind: "$productInfo" },
             {
                 $group: {
-                    _id: `$${by === 'category' ? 'productInfo.category' :
-                        by === 'gender' ? 'productInfo.gender' :
-                            by === 'season' ? 'productInfo.season' : 'productInfo.category'}`,
-                    totalSales: { $sum: "$soldCount" },
-                    totalRevenue: {
-                        $sum: { $multiply: ["$soldCount", "$productInfo.price"] }
-                    },
-                    uniqueProducts: { $addToSet: "$product" },
-                    uniqueVariants: {
-                        $addToSet: {
-                            product: "$product",
-                            color: "$variant.color",
-                            size: "$variant.size"
-                        }
-                    }
+                    _id: by === 'category' ? "$productInfo.category" :
+                        by === 'gender' ? "$productInfo.gender" :
+                            by === 'season' ? "$productInfo.season" : "$productInfo.category",
+                    totalSold: { $sum: "$products.quantity" },
+                    totalRevenue: { $sum: { $multiply: ["$products.price", "$products.quantity"] } },
+                    uniqueProducts: { $addToSet: "$products.product" },
+                    orderCount: { $sum: 1 },
+                    avgPrice: { $avg: "$products.price" }
                 }
             },
             {
                 $project: {
+                    _id: 0,
                     category: "$_id",
-                    totalSales: 1,
+                    totalSold: 1,
                     totalRevenue: 1,
                     uniqueProductsCount: { $size: "$uniqueProducts" },
-                    uniqueVariantsCount: { $size: "$uniqueVariants" },
-                    avgProductValue: { $divide: ["$totalRevenue", { $size: "$uniqueProducts" }] }
+                    orderCount: 1,
+                    avgPrice: 1,
+                    avgSoldPerProduct: { $divide: ["$totalSold", { $size: "$uniqueProducts" }] },
+                    avgRevenuePerProduct: { $divide: ["$totalRevenue", { $size: "$uniqueProducts" }] },
+                    percentage: 0 // Keyin hisoblanadi
                 }
             },
-            { $sort: { totalSales: -1 } }
+            { $sort: { totalSold: -1 } }
         ]);
+
+        // Percentage hisoblash
+        const totalSold = stats.reduce((sum, item) => sum + item.totalSold, 0);
+        const totalRevenue = stats.reduce((sum, item) => sum + item.totalRevenue, 0);
+
+        const statsWithPercentage = stats.map(item => ({
+            ...item,
+            percentage: totalSold > 0 ? (item.totalSold / totalSold * 100).toFixed(1) : 0,
+            revenuePercentage: totalRevenue > 0 ? (item.totalRevenue / totalRevenue * 100).toFixed(1) : 0
+        }));
 
         return res.status(200).json({
             success: true,
-            data: stats,
+            data: statsWithPercentage,
             groupedBy: by,
-            totalGroups: stats.length
+            totalGroups: stats.length,
+            summary: {
+                totalSold,
+                totalRevenue,
+                totalProducts: stats.reduce((sum, item) => sum + item.uniqueProductsCount, 0),
+                totalOrders: stats.reduce((sum, item) => sum + item.orderCount, 0)
+            }
         });
 
     } catch (error) {
@@ -525,79 +592,203 @@ export const getCategoryStats = async (req, res) => {
 export const getProductDetailedHistory = async (req, res) => {
     try {
         const { productId } = req.params;
+        const { startDate, endDate } = req.query;
 
-        const history = await History.find({ product: productId })
-            .sort({ month: -1 })
-            .populate('product', 'title category gender price mainImages');
+        let matchStage = {
+            status: { $in: ["delivered", "completed"] },
+            "products.product": new mongoose.Types.ObjectId(productId)
+        };
 
-        // Gruppalash variantlar bo'yicha
-        const variantStats = await History.aggregate([
-            { $match: { product: new mongoose.Types.ObjectId(productId) } },
+        // Sanalar filteri
+        if (startDate || endDate) {
+            matchStage.createdAt = {};
+            if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+            if (endDate) matchStage.createdAt.$lte = new Date(endDate);
+        }
+
+        // Mahsulot ma'lumotlarini olish
+        const product = await Product.findById(productId)
+            .select('title sku category gender sizes season mainImages count material isAvailable')
+            .lean();
+
+        if (!product) {
+            return sendErrorResponse(res, 404, 'Mahsulot topilmadi');
+        }
+
+        // Umumiy statistika
+        const generalStats = await Order.aggregate([
+            { $match: matchStage },
+            { $unwind: "$products" },
+            { $match: { "products.product": new mongoose.Types.ObjectId(productId) } },
+            {
+                $group: {
+                    _id: null,
+                    totalSold: { $sum: "$products.quantity" },
+                    totalRevenue: { $sum: { $multiply: ["$products.price", "$products.quantity"] } },
+                    orderCount: { $sum: 1 },
+                    avgPrice: { $avg: "$products.price" },
+                    minPrice: { $min: "$products.price" },
+                    maxPrice: { $max: "$products.price" },
+                    firstSale: { $min: "$createdAt" },
+                    lastSale: { $max: "$createdAt" }
+                }
+            }
+        ]);
+
+        // Oylik statistika
+        const monthlyStats = await Order.aggregate([
+            { $match: matchStage },
+            { $unwind: "$products" },
+            { $match: { "products.product": new mongoose.Types.ObjectId(productId) } },
             {
                 $group: {
                     _id: {
-                        color: "$variant.color",
-                        size: "$variant.size",
-                        style: "$variant.style"
+                        year: { $year: "$createdAt" },
+                        month: { $month: "$createdAt" }
                     },
-                    totalSold: { $sum: "$soldCount" },
-                    monthsActive: { $addToSet: "$month" },
-                    firstSale: { $min: "$month" },
-                    lastSale: { $max: "$month" }
+                    totalSold: { $sum: "$products.quantity" },
+                    totalRevenue: { $sum: { $multiply: ["$products.price", "$products.quantity"] } },
+                    orderCount: { $sum: 1 },
+                    avgPrice: { $avg: "$products.price" }
                 }
             },
             {
                 $project: {
-                    variant: "$_id",
+                    _id: 0,
+                    year: "$_id.year",
+                    month: "$_id.month",
+                    period: {
+                        $concat: [
+                            { $toString: "$_id.year" },
+                            "-",
+                            { $toString: { $cond: { if: { $lt: ["$_id.month", 10] }, then: { $concat: ["0", { $toString: "$_id.month" }] }, else: { $toString: "$_id.month" } } } }
+                        ]
+                    },
                     totalSold: 1,
-                    monthsActiveCount: { $size: "$monthsActive" },
-                    firstSale: 1,
-                    lastSale: 1,
-                    avgMonthlySales: { $divide: ["$totalSold", { $size: "$monthsActive" }] }
+                    totalRevenue: 1,
+                    orderCount: 1,
+                    avgPrice: 1,
+                    avgSalePerOrder: { $divide: ["$totalSold", "$orderCount"] }
                 }
             },
-            { $sort: { totalSold: -1 } }
+            { $sort: { year: -1, month: -1 } }
         ]);
 
-        // Oylik statistikani hisoblash
-        const monthlyStats = await History.aggregate([
-            { $match: { product: new mongoose.Types.ObjectId(productId) } },
+        // Kundalik statistika (oxirgi 30 kun)
+        const dailyStats = await Order.aggregate([
             {
-                $group: {
-                    _id: "$month",
-                    totalSold: { $sum: "$soldCount" },
-                    uniqueVariants: {
-                        $addToSet: {
-                            color: "$variant.color",
-                            size: "$variant.size",
-                            style: "$variant.style"
-                        }
+                $match: {
+                    ...matchStage,
+                    createdAt: {
+                        $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
                     }
                 }
             },
+            { $unwind: "$products" },
+            { $match: { "products.product": new mongoose.Types.ObjectId(productId) } },
             {
-                $project: {
-                    month: "$_id",
-                    totalSold: 1,
-                    uniqueVariantsCount: { $size: "$uniqueVariants" },
-                    averagePerVariant: { $divide: ["$totalSold", { $size: "$uniqueVariants" }] }
+                $group: {
+                    _id: {
+                        year: { $year: "$createdAt" },
+                        month: { $month: "$createdAt" },
+                        day: { $dayOfMonth: "$createdAt" }
+                    },
+                    totalSold: { $sum: "$products.quantity" },
+                    totalRevenue: { $sum: { $multiply: ["$products.price", "$products.quantity"] } },
+                    orderCount: { $sum: 1 }
                 }
             },
-            { $sort: { month: -1 } }
+            {
+                $project: {
+                    _id: 0,
+                    date: {
+                        $dateFromParts: {
+                            year: "$_id.year",
+                            month: "$_id.month",
+                            day: "$_id.day"
+                        }
+                    },
+                    totalSold: 1,
+                    totalRevenue: 1,
+                    orderCount: 1
+                }
+            },
+            { $sort: { date: -1 } }
         ]);
+
+        // So'nggi 10 ta order
+        const recentOrders = await Order.aggregate([
+            { $match: matchStage },
+            { $unwind: "$products" },
+            { $match: { "products.product": new mongoose.Types.ObjectId(productId) } },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "customer",
+                    foreignField: "_id",
+                    as: "customerInfo"
+                }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    orderNumber: "$_id",
+                    orderDate: "$createdAt",
+                    quantity: "$products.quantity",
+                    price: "$products.price",
+                    total: { $multiply: ["$products.price", "$products.quantity"] },
+                    status: 1,
+                    customerName: { $arrayElemAt: ["$customerInfo.name", 0] },
+                    customerPhone: { $arrayElemAt: ["$customerInfo.phone", 0] }
+                }
+            },
+            { $sort: { orderDate: -1 } },
+            { $limit: 10 }
+        ]);
+
+        const stats = generalStats[0] || {
+            totalSold: 0,
+            totalRevenue: 0,
+            orderCount: 0,
+            avgPrice: 0,
+            minPrice: 0,
+            maxPrice: 0,
+            firstSale: null,
+            lastSale: null
+        };
+
+        // Progress calculation
+        const progress = {
+            soldVsStock: product.count > 0 ? (stats.totalSold / (stats.totalSold + product.count) * 100).toFixed(1) : 100,
+            revenuePerItem: stats.totalSold > 0 ? stats.totalRevenue / stats.totalSold : 0,
+            salesVelocity: monthlyStats.length > 0 ? stats.totalSold / monthlyStats.length : 0
+        };
 
         return res.status(200).json({
             success: true,
             data: {
-                rawHistory: history,
-                variantStats,
-                monthlyStats,
+                productInfo: product,
                 summary: {
-                    totalMonths: monthlyStats.length,
-                    totalVariants: variantStats.length,
-                    totalSold: variantStats.reduce((sum, v) => sum + v.totalSold, 0),
-                    bestVariant: variantStats[0],
-                    bestMonth: monthlyStats[0]
+                    totalSold: stats.totalSold,
+                    totalRevenue: stats.totalRevenue,
+                    totalOrders: stats.orderCount,
+                    avgPrice: stats.avgPrice,
+                    minPrice: stats.minPrice,
+                    maxPrice: stats.maxPrice,
+                    firstSale: stats.firstSale,
+                    lastSale: stats.lastSale,
+                    avgSalePerOrder: stats.orderCount > 0 ? stats.totalSold / stats.orderCount : 0,
+                    daysSinceFirstSale: stats.firstSale ? Math.floor((new Date() - new Date(stats.firstSale)) / (1000 * 60 * 60 * 24)) : 0
+                },
+                progress,
+                monthlyStats,
+                dailyStats,
+                recentOrders,
+                analysis: {
+                    bestMonth: monthlyStats.length > 0 ? monthlyStats.reduce((best, current) => current.totalSold > best.totalSold ? current : monthlyStats[0], monthlyStats[0]) : null,
+                    worstMonth: monthlyStats.length > 0 ? monthlyStats.reduce((worst, current) => current.totalSold < worst.totalSold ? current : monthlyStats[0], monthlyStats[0]) : null,
+                    trend: monthlyStats.length >= 2 ?
+                        ((monthlyStats[0].totalSold - monthlyStats[1].totalSold) / monthlyStats[1].totalSold * 100).toFixed(1) : 0
                 }
             }
         });
@@ -608,3 +799,336 @@ export const getProductDetailedHistory = async (req, res) => {
     }
 };
 
+// 7. UMUMIY STATISTIKA (DASHBOARD UCHUN) - YANGILANGAN
+export const getDashboardStats = async (req, res) => {
+    try {
+        /* =======================
+           DATE RANGES
+        ======================== */
+        const now = new Date();
+
+        const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        const yesterdayDate = new Date(todayDate);
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+
+        const lastWeekDate = new Date(todayDate);
+        lastWeekDate.setDate(lastWeekDate.getDate() - 7);
+
+        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            0,
+            23,
+            59,
+            59,
+            999
+        );
+
+        /* =======================
+           TODAY
+        ======================== */
+        const todayStats = await Order.aggregate([
+            {
+                $match: {
+                    status: { $in: ["delivered", "completed"] },
+                    createdAt: { $gte: todayDate }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalRevenue: { $sum: "$total" },
+                    orderCount: { $sum: 1 },
+                    totalItems: { $sum: { $size: "$products" } },
+                    totalSold: {
+                        $sum: {
+                            $reduce: {
+                                input: "$products",
+                                initialValue: 0,
+                                in: { $add: ["$$value", "$$this.quantity"] }
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        /* =======================
+           YESTERDAY
+        ======================== */
+        const yesterdayStats = await Order.aggregate([
+            {
+                $match: {
+                    status: { $in: ["delivered", "completed"] },
+                    createdAt: { $gte: yesterdayDate, $lt: todayDate }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalRevenue: { $sum: "$total" },
+                    orderCount: { $sum: 1 },
+                    totalItems: { $sum: { $size: "$products" } },
+                    totalSold: {
+                        $sum: {
+                            $reduce: {
+                                input: "$products",
+                                initialValue: 0,
+                                in: { $add: ["$$value", "$$this.quantity"] }
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        /* =======================
+           LAST WEEK
+        ======================== */
+        const lastWeekStats = await Order.aggregate([
+            {
+                $match: {
+                    status: { $in: ["delivered", "completed"] },
+                    createdAt: { $gte: lastWeekDate, $lt: yesterdayDate }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalRevenue: { $sum: "$total" },
+                    orderCount: { $sum: 1 },
+                    totalItems: { $sum: { $size: "$products" } }
+                }
+            }
+        ]);
+
+        /* =======================
+           CURRENT MONTH
+        ======================== */
+        const monthlyStats = await Order.aggregate([
+            {
+                $match: {
+                    status: { $in: ["delivered", "completed"] },
+                    createdAt: { $gte: currentMonthStart }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalRevenue: { $sum: "$total" },
+                    orderCount: { $sum: 1 },
+                    totalItems: { $sum: { $size: "$products" } },
+                    totalSold: {
+                        $sum: {
+                            $reduce: {
+                                input: "$products",
+                                initialValue: 0,
+                                in: { $add: ["$$value", "$$this.quantity"] }
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        /* =======================
+           LAST MONTH
+        ======================== */
+        const lastMonthStats = await Order.aggregate([
+            {
+                $match: {
+                    status: { $in: ["delivered", "completed"] },
+                    createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalRevenue: { $sum: "$total" },
+                    orderCount: { $sum: 1 },
+                    totalItems: { $sum: { $size: "$products" } },
+                    totalSold: {
+                        $sum: {
+                            $reduce: {
+                                input: "$products",
+                                initialValue: 0,
+                                in: { $add: ["$$value", "$$this.quantity"] }
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        /* =======================
+           SAFE DATA
+        ======================== */
+        const todayData = todayStats[0] || { totalRevenue: 0, orderCount: 0, totalItems: 0, totalSold: 0 };
+        const yesterdayData = yesterdayStats[0] || { totalRevenue: 0, orderCount: 0, totalItems: 0, totalSold: 0 };
+        const lastWeekData = lastWeekStats[0] || { totalRevenue: 0, orderCount: 0, totalItems: 0 };
+        const currentMonthData = monthlyStats[0] || { totalRevenue: 0, orderCount: 0, totalItems: 0, totalSold: 0 };
+        const lastMonthData = lastMonthStats[0] || { totalRevenue: 0, orderCount: 0, totalItems: 0, totalSold: 0 };
+
+        /* =======================
+           CHANGE CALCULATOR
+        ======================== */
+        const calculateChange = (current, previous) => {
+            if (!previous || previous === 0) {
+                return { percentage: 0, trend: "neutral" };
+            }
+
+            const diff = ((current - previous) / previous) * 100;
+
+            return {
+                percentage: Math.abs(Number(diff.toFixed(1))),
+                trend: diff > 0 ? "up" : diff < 0 ? "down" : "neutral"
+            };
+        };
+
+        /* =======================
+           RESPONSE
+        ======================== */
+        return res.status(200).json({
+            success: true,
+            data: {
+                today: todayData,
+                yesterday: yesterdayData,
+                lastWeek: lastWeekData,
+                currentMonth: currentMonthData,
+                lastMonth: lastMonthData,
+                changes: {
+                    todayVsYesterday: {
+                        revenue: calculateChange(todayData.totalRevenue, yesterdayData.totalRevenue),
+                        orders: calculateChange(todayData.orderCount, yesterdayData.orderCount)
+                    },
+                    currentMonthVsLastMonth: {
+                        revenue: calculateChange(currentMonthData.totalRevenue, lastMonthData.totalRevenue),
+                        orders: calculateChange(currentMonthData.orderCount, lastMonthData.orderCount),
+                        sold: calculateChange(currentMonthData.totalSold, lastMonthData.totalSold)
+                    }
+                }
+            },
+            timestamp: new Date()
+        });
+
+    } catch (error) {
+        console.error("❌ Dashboard statistikasini olishda xatolik:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Dashboard statistikasini olishda xatolik"
+        });
+    }
+};
+
+
+// 8. MAHSULOTNING OYLIK STATISTIKASI
+export const getProductMonthlyHistory = async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const { startDate, endDate, limit = 12 } = req.query;
+
+        let matchStage = {
+            status: { $in: ["delivered", "completed"] },
+            "products.product": new mongoose.Types.ObjectId(productId)
+        };
+
+        // Sanalar filteri
+        if (startDate || endDate) {
+            matchStage.createdAt = {};
+            if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+            if (endDate) matchStage.createdAt.$lte = new Date(endDate);
+        }
+
+        const monthlyStats = await Order.aggregate([
+            { $match: matchStage },
+            { $unwind: "$products" },
+            { $match: { "products.product": new mongoose.Types.ObjectId(productId) } },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: "$createdAt" },
+                        month: { $month: "$createdAt" }
+                    },
+                    totalSold: { $sum: "$products.quantity" },
+                    totalRevenue: { $sum: { $multiply: ["$products.price", "$products.quantity"] } },
+                    orderCount: { $sum: 1 },
+                    avgPrice: { $avg: "$products.price" },
+                    minPrice: { $min: "$products.price" },
+                    maxPrice: { $max: "$products.price" }
+                }
+            },
+            {
+                $lookup: {
+                    from: "products",
+                    localField: "products.product",
+                    foreignField: "_id",
+                    as: "productInfo"
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    year: "$_id.year",
+                    month: "$_id.month",
+                    period: {
+                        $concat: [
+                            { $toString: "$_id.year" },
+                            "-",
+                            { $toString: { $cond: { if: { $lt: ["$_id.month", 10] }, then: { $concat: ["0", { $toString: "$_id.month" }] }, else: { $toString: "$_id.month" } } } }
+                        ]
+                    },
+                    totalSold: 1,
+                    totalRevenue: 1,
+                    orderCount: 1,
+                    avgPrice: 1,
+                    minPrice: 1,
+                    maxPrice: 1,
+                    productTitle: { $arrayElemAt: ["$productInfo.title", 0] },
+                    productSku: { $arrayElemAt: ["$productInfo.sku", 0] },
+                    avgSalePerOrder: { $divide: ["$totalSold", "$orderCount"] },
+                    revenuePerItem: { $divide: ["$totalRevenue", "$totalSold"] }
+                }
+            },
+            { $sort: { year: -1, month: -1 } },
+            { $limit: parseInt(limit) }
+        ]);
+
+        const totalStats = monthlyStats.reduce((acc, month) => ({
+            totalSold: acc.totalSold + month.totalSold,
+            totalRevenue: acc.totalRevenue + month.totalRevenue,
+            totalOrders: acc.totalOrders + month.orderCount
+        }), { totalSold: 0, totalRevenue: 0, totalOrders: 0 });
+
+        // Trend analysis
+        let trend = 0;
+        if (monthlyStats.length >= 2) {
+            const current = monthlyStats[0];
+            const previous = monthlyStats[1];
+            trend = ((current.totalSold - previous.totalSold) / previous.totalSold * 100).toFixed(1);
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: monthlyStats,
+            summary: {
+                totalMonths: monthlyStats.length,
+                totalSold: totalStats.totalSold,
+                totalRevenue: totalStats.totalRevenue,
+                totalOrders: totalStats.totalOrders,
+                averageMonthlySold: monthlyStats.length > 0 ? totalStats.totalSold / monthlyStats.length : 0,
+                averageMonthlyRevenue: monthlyStats.length > 0 ? totalStats.totalRevenue / monthlyStats.length : 0,
+                averageMonthlyOrders: monthlyStats.length > 0 ? totalStats.totalOrders / monthlyStats.length : 0,
+                bestMonth: monthlyStats.length > 0 ? monthlyStats.reduce((best, current) => current.totalSold > best.totalSold ? current : monthlyStats[0], monthlyStats[0]) : null,
+                worstMonth: monthlyStats.length > 0 ? monthlyStats.reduce((worst, current) => current.totalSold < worst.totalSold ? current : monthlyStats[0], monthlyStats[0]) : null,
+                trend: trend
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Mahsulot oylik statistikasini olishda xatolik:', error);
+        sendErrorResponse(res, 500, 'Mahsulot oylik statistikasini olishda xatolik');
+    }
+};

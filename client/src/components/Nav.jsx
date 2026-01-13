@@ -18,7 +18,10 @@ import {
   PieChart,
   Moon,
   Sun,
-  QrCode
+  QrCode,
+  Calculator,
+  Users2,
+  ChartSpline
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { ContextData } from '../contextData/Context'
@@ -29,6 +32,7 @@ export const Nav = () => {
   const { user, removeUserToken, dark, setDark } = useContext(ContextData)
   const [isOpen, setIsOpen] = useState(false)
   const [activeDropdown, setActiveDropdown] = useState(null)
+
 
   const dropdownRef = useRef(null)
   const navRef = useRef(null)
@@ -52,21 +56,23 @@ export const Nav = () => {
   };
 
   const navLinks = [
+    ...(user.role === 'admin' ? [
+      {
+        name: 'Дашборд',
+        path: '/dashboard',
+        icon: <ChartSpline size={20} />,
+
+      }
+    ] : []),
     {
       name: 'Склад',
       path: "/",
       icon: <Boxes size={20} />,
     },
     {
-      name: 'Буюртмалар',
+      name: 'Мижозлар',
       path: '/order',
-      icon: <ReceiptText size={20} />,
-      hasDropdown: false
-    },
-    {
-      name: 'Сканер',
-      path: '/scann',
-      icon: <QrCode size={20} />,
+      icon: <Users2 size={20} />,
       hasDropdown: false
     },
     {
@@ -159,7 +165,13 @@ export const Nav = () => {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
-          <Link to={getDefaultPath()}>
+          <Link
+            onDoubleClick={() => {
+              const current = localStorage.getItem("hide") === "true";
+              localStorage.setItem("hide", (!current).toString());
+            }}
+
+            to={getDefaultPath()}>
             <motion.img
               className='w-9 h-9 rounded-lg shadow-sm'
               src={logo}

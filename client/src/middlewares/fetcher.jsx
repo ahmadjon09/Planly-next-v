@@ -2,11 +2,10 @@ import axios from 'axios'
 import Cookies from 'js-cookie'
 
 const origin = window.location.origin;
-// const BASE_URL = `https://planly.onrender.com/api`
-const BASE_URL = `http://localhost:3828/api`
+// const BASE_URL = `http://192.168.100.87:3828/api`
+const BASE_URL = `http://localhost:3828/api/`
 // const BASE_URL = `${origin}/api`
 
-localStorage.setItem('base_api', BASE_URL)
 
 const token = Cookies.get('user_token')
 const instance = axios.create({

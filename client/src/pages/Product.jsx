@@ -9,22 +9,17 @@ import {
   Eye,
   Hash,
   Tag,
-  DollarSign,
   Package,
-  Ruler,
   Calendar,
   CheckCircle,
   XCircle,
-  Circle,
   Trash2,
   ChevronLeft,
   ChevronRight,
   Search,
   Filter,
   Image as ImageIcon,
-  Palette,
   Edit,
-  Layers,
   BarChart3,
   ShoppingBag
 } from 'lucide-react'
@@ -33,12 +28,12 @@ import AddProductModal from '../components/AddProductModal'
 import { ContextData } from '../contextData/Context'
 import { LoadingState } from '../components/loading-state'
 import { motion, AnimatePresence } from 'framer-motion'
-import VariantManagerModal from '../components/VariantManagerModal'
 
 export const ProductsPage = () => {
   const { user } = useContext(ContextData)
   const { type } = useParams()
   const navigate = useNavigate()
+  const isHide = localStorage.getItem("hide") === "true"
 
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -49,8 +44,6 @@ export const ProductsPage = () => {
 
   const [open, setOpen] = useState(false)
   const [viewData, setViewData] = useState(null)
-  const [variantManagerOpen, setVariantManagerOpen] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState(null)
   const [editing, setEditing] = useState({})
   const [loading, setLoading] = useState(null)
   const [deleting, setDeleting] = useState(null)
@@ -91,11 +84,7 @@ export const ProductsPage = () => {
   }
 
   const calculateTotalStock = (product) => {
-    return product.types.reduce((sum, variant) => sum + (variant.count || 0), 0)
-  }
-
-  const calculateTotalVariants = (product) => {
-    return product.types.length
+    return product.count || 0
   }
 
   const handleChange = (id, field, value) => {
@@ -112,14 +101,13 @@ export const ProductsPage = () => {
     try {
       setLoading(id)
       const updateData = {
-        price: parseFloat(editing[id].price) || 0,
         title: editing[id].title,
         category: editing[id].category,
         gender: editing[id].gender,
         season: editing[id].season,
         material: editing[id].material,
-        description: editing[id].description,
-        sku: editing[id].sku
+        sku: editing[id].sku,
+        count: editing[id].count
       }
 
       await Fetch.put(`/products/${id}`, updateData)
@@ -128,6 +116,7 @@ export const ProductsPage = () => {
         delete copy[id]
         return copy
       })
+      setViewData(null)
       mutate()
     } catch (err) {
       console.error('Update error:', err)
@@ -156,11 +145,6 @@ export const ProductsPage = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const handleOpenVariantManager = (product) => {
-    setSelectedProduct(product)
-    setVariantManagerOpen(true)
-  }
-
   const handleOpenHistory = (productId) => {
     navigate(`/products/${productId}/history`)
   }
@@ -173,6 +157,8 @@ export const ProductsPage = () => {
   ]
 
   const genders = ["men", "women", "kids", "unisex"]
+
+  const seasons = ["summer", "winter", "spring", "autumn", "all"]
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4 md:p-6 transition-colors duration-300">
@@ -193,7 +179,7 @@ export const ProductsPage = () => {
                   Маҳсулотлар
                 </h1>
                 <p className="text-gray-600 text-sm md:text-base mt-1">
-                  {pagination.total || 0} та маҳсулот • {calculateTotalVariants({ types: products.reduce((acc, p) => acc.concat(p.types), []) })} та вариация
+                  {pagination.total || 0} та маҳсулот • Умумий дона: {products.reduce((sum, p) => sum + (p.count || 0), 0)}
                 </p>
               </div>
             </div>
@@ -209,17 +195,15 @@ export const ProductsPage = () => {
                 <span className="font-semibold text-sm md:text-base">Статистика</span>
               </motion.button>
 
-              {user.role === 'admin' && (
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setOpen(true)}
-                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-                >
-                  <Plus size={18} />
-                  <span className="font-semibold text-sm md:text-base">Янги маҳсулот</span>
-                </motion.button>
-              )}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setOpen(true)}
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+              >
+                <Plus size={18} />
+                <span className="font-semibold text-sm md:text-base">Янги маҳсулот</span>
+              </motion.button>
             </div>
           </div>
         </motion.div>
@@ -341,6 +325,7 @@ export const ProductsPage = () => {
                       {product.mainImages && product.mainImages.length > 0 ? (
                         <div className="relative h-48 rounded-xl overflow-hidden">
                           <img
+                            onClick={() => setViewData(product)}
                             src={product.mainImages[0]}
                             alt={product.title}
                             className="w-full h-full object-cover"
@@ -381,21 +366,33 @@ export const ProductsPage = () => {
                           <p className="font-medium text-gray-800">{product.sku}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600 text-xs">Нарх</p>
-                          <p className="font-medium text-green-600">
-                            {formatNumber(product.price)} сўм
-                          </p>
-                        </div>
-                        <div>
                           <p className="text-gray-600 text-xs">Умумий дона</p>
                           <p className="font-medium text-gray-800">
                             {calculateTotalStock(product)} дона
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-600 text-xs">Вариациялар</p>
+                          <p className="text-gray-600 text-xs">Сотилган</p>
                           <p className="font-medium text-gray-800">
-                            {calculateTotalVariants(product)} та
+                            {product.sold || 0} дона
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600 text-xs">Ҳолат</p>
+                          <p className="font-medium text-gray-800">
+                            <span className={`inline-flex items-center gap-1 ${product.count > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {product.count > 0 ? (
+                                <>
+                                  <CheckCircle size={12} />
+                                  Мавжуд
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle size={12} />
+                                  Тугаган
+                                </>
+                              )}
+                            </span>
                           </p>
                         </div>
                       </div>
@@ -408,13 +405,6 @@ export const ProductsPage = () => {
                         >
                           <Eye size={16} className="inline mr-1" />
                           Кўриш
-                        </button>
-                        <button
-                          onClick={() => handleOpenVariantManager(product)}
-                          className="flex-1 bg-purple-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-purple-600 transition-colors"
-                        >
-                          <Layers size={16} className="inline mr-1" />
-                          Вариация
                         </button>
                         <button
                           onClick={() => handleOpenHistory(product._id)}
@@ -449,13 +439,13 @@ export const ProductsPage = () => {
                           Категория
                         </th>
                         <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
-                          Нарх
-                        </th>
-                        <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
                           Омбор
                         </th>
                         <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
-                          Вариациялар
+                          Сотилган
+                        </th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
+                          Ҳолат
                         </th>
                         <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
                           QR
@@ -480,9 +470,10 @@ export const ProductsPage = () => {
                               {product.mainImages && product.mainImages.length > 0 ? (
                                 <div className="relative h-12 w-12 rounded-lg overflow-hidden">
                                   <img
+                                    onClick={() => setViewData(product)}
                                     src={product.mainImages[0]}
                                     alt={product.title}
-                                    className="w-full h-full object-cover"
+                                    className="w-full h-full object-cover cursor-pointer"
                                   />
                                 </div>
                               ) : (
@@ -511,39 +502,38 @@ export const ProductsPage = () => {
                             </span>
                           </td>
 
-                          {/* Price */}
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className="text-green-500">
-                                <DollarSign size={16} />
-                              </span>
-                              <span className="font-bold text-gray-800">
-                                {formatNumber(product.price)} сўм
-                              </span>
-                            </div>
-                          </td>
-
                           {/* Stock */}
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <Package size={16} className="text-gray-600" />
                               <span className="font-semibold text-gray-800">
-                                {calculateTotalStock(product)} дона
+                                {product.count} дона
                               </span>
                             </div>
                           </td>
 
-                          {/* Variants */}
+                          {/* Sold */}
                           <td className="px-6 py-4">
-                            <button
-                              onClick={() => handleOpenVariantManager(product)}
-                              className="flex items-center gap-2 text-blue-500 hover:text-blue-700"
-                            >
-                              <Layers size={16} />
-                              <span className="font-medium">
-                                {calculateTotalVariants(product)} та
+                            <div className="flex items-center gap-2">
+                              <BarChart3 size={16} className="text-green-500" />
+                              <span className="font-semibold text-gray-800">
+                                {product.sold || 0} дона
                               </span>
-                            </button>
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              {product.count != 0 ? (
+                                <CheckCircle size={16} className="text-green-500" />
+                              ) : (
+                                <XCircle size={16} className="text-red-500" />
+                              )}
+                              <span className={`font-medium ${product.count != 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {product.count != 0 ? 'Мавжуд' : 'Тугаган'}
+                              </span>
+                            </div>
                           </td>
 
                           {/* QR Code */}
@@ -576,30 +566,6 @@ export const ProductsPage = () => {
 
                               {user.role === 'admin' && (
                                 <>
-                                  <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={() => {
-                                      setEditing({
-                                        [product._id]: {
-                                          title: product.title,
-                                          price: product.price,
-                                          category: product.category,
-                                          gender: product.gender,
-                                          season: product.season,
-                                          material: product.material,
-                                          description: product.description,
-                                          sku: product.sku
-                                        }
-                                      })
-                                      setViewData(product)
-                                    }}
-                                    className="bg-yellow-500 text-white p-2 rounded-lg hover:bg-yellow-600 transition-colors"
-                                    title="Таҳрирлаш"
-                                  >
-                                    <Edit size={16} />
-                                  </motion.button>
-
                                   <motion.button
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
@@ -702,15 +668,6 @@ export const ProductsPage = () => {
 
         {/* Modals */}
         <AddProductModal open={open} setOpen={setOpen} mutate={mutate} />
-
-        {selectedProduct && (
-          <VariantManagerModal
-            open={variantManagerOpen}
-            setOpen={setVariantManagerOpen}
-            product={selectedProduct}
-            mutate={mutate}
-          />
-        )}
 
         {/* Product Detail Modal */}
         <AnimatePresence>
@@ -832,7 +789,19 @@ export const ProductsPage = () => {
                             <label className="text-xs font-medium text-gray-600 block mb-1">
                               Фасл
                             </label>
-                            <p className="font-medium text-gray-800">{viewData.season}</p>
+                            {user.role === 'admin' ? (
+                              <select
+                                value={editing[viewData._id]?.season || viewData.season}
+                                onChange={e => handleChange(viewData._id, 'season', e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                              >
+                                {seasons.map(season => (
+                                  <option key={season} value={season}>{season}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <p className="font-medium text-gray-800">{viewData.season}</p>
+                            )}
                           </div>
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">
@@ -853,9 +822,9 @@ export const ProductsPage = () => {
                       </div>
                     </div>
 
-                    {/* Right Column - Details & Variants */}
+                    {/* Right Column - Details & Stock */}
                     <div className="space-y-6">
-                      {/* Title & Price */}
+                      {/* Title */}
                       <div>
                         <div className="mb-4">
                           <label className="text-xs font-medium text-gray-600 block mb-1">
@@ -872,30 +841,9 @@ export const ProductsPage = () => {
                             <h3 className="text-xl font-bold text-gray-800">{viewData.title}</h3>
                           )}
                         </div>
-
-                        <div>
-                          <label className="text-xs font-medium text-gray-600 block mb-1">
-                            Нарх
-                          </label>
-                          {user.role === 'admin' ? (
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                value={editing[viewData._id]?.price || viewData.price}
-                                onChange={e => handleChange(viewData._id, 'price', e.target.value)}
-                                className="flex-1 border border-gray-300 rounded-lg px-3 py-3 text-lg font-bold"
-                              />
-                              <span className="text-gray-500">сўм</span>
-                            </div>
-                          ) : (
-                            <p className="text-2xl font-bold text-green-600">
-                              {formatNumber(viewData.price)} сўм
-                            </p>
-                          )}
-                        </div>
                       </div>
 
-                      {/* Stock & Variants Summary */}
+                      {/* Stock & Status Summary */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="rounded-xl p-4 bg-gray-100">
                           <div className="flex items-center gap-3 mb-2">
@@ -908,8 +856,10 @@ export const ProductsPage = () => {
                             </div>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-sm text-gray-600">Вариациялар</span>
-                            <span className="font-semibold">{calculateTotalVariants(viewData)} та</span>
+                            <span className="text-sm text-gray-600">Ҳолат</span>
+                            <span className={`font-semibold ${viewData.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
+                              {viewData.isAvailable ? 'Мавжуд' : 'Тугаган'}
+                            </span>
                           </div>
                         </div>
 
@@ -924,86 +874,27 @@ export const ProductsPage = () => {
                             </div>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-sm text-gray-600">Ҳолат</span>
-                            <span className={`font-semibold ${viewData.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
-                              {viewData.isAvailable ? 'Мавжуд' : 'Тугаган'}
-                            </span>
+                            <span className="text-sm text-gray-600">SKU</span>
+                            <span className="font-semibold">{viewData.sku}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Description */}
-                      <div>
-                        <label className="text-xs font-medium text-gray-600 block mb-1">
-                          Тавсиф
-                        </label>
-                        {user.role === 'admin' ? (
-                          <textarea
-                            value={editing[viewData._id]?.description || viewData.description || ''}
-                            onChange={e => handleChange(viewData._id, 'description', e.target.value)}
-                            rows={4}
+                      {/* Count Field (if needed for editing) */}
+                      {user.role === 'admin' && (
+                        <div>
+                          <label className="text-xs font-medium text-gray-600 block mb-1">
+                            Дона сони
+                          </label>
+                          <input
+                            type="number"
+                            value={editing[viewData._id]?.count || viewData.count || 0}
+                            onChange={e => handleChange(viewData._id, 'count', e.target.value)}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                            placeholder="Маҳсулот тавсифи..."
+                            min="0"
                           />
-                        ) : (
-                          <p className="text-sm text-gray-800 whitespace-pre-wrap">
-                            {viewData.description || 'Тавсиф мавжуд эмас'}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Variants List */}
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-600">
-                            Вариациялар ({viewData.types?.length || 0})
-                          </h4>
-                          <button
-                            onClick={() => {
-                              setSelectedProduct(viewData)
-                              setVariantManagerOpen(true)
-                              setViewData(null)
-                            }}
-                            className="text-blue-500 hover:text-blue-700 text-sm font-medium"
-                          >
-                            Бошқариш →
-                          </button>
                         </div>
-
-                        <div className="space-y-2 max-h-60 overflow-y-auto">
-                          {viewData.types?.map((variant, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center justify-between p-3 rounded-lg bg-gray-100"
-                            >
-                              <div className="flex items-center gap-3">
-                                {variant.images?.[0] && (
-                                  <div className="h-10 w-10 rounded overflow-hidden">
-                                    <img
-                                      src={variant.images[0]}
-                                      alt={`${variant.color} ${variant.size}`}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </div>
-                                )}
-                                <div>
-                                  <p className="font-medium">
-                                    {variant.color} • {variant.size}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {variant.style}
-                                  </p>
-                                </div>
-                              </div>
-                              <img className='w-10 h-10' src={variant.qrCode} alt={variant.model} />
-                              <div className="text-right">
-                                <p className="font-bold">{variant.count || 0} дона</p>
-                                <p className="text-xs text-gray-500">омборда</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>

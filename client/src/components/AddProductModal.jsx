@@ -6,69 +6,24 @@ import {
   Plus,
   Package,
   DollarSign,
-  Ruler,
   Upload,
   Image as ImageIcon,
-  Palette,
   Scissors,
-  Layers,
   Eye,
-  Grid,
-  FileImage,
   IdCard,
   Camera,
   QrCode,
   Box,
-  Maximize2, // Preview uchun
-  Minimize2 // Preview uchun
+  Maximize2,
+  Minimize2,
+  AlertCircle
 } from 'lucide-react'
 import { useState, useContext, useEffect, useRef } from 'react'
 import Fetch from '../middlewares/fetcher'
 import { ContextData } from '../contextData/Context'
 import { motion, AnimatePresence } from 'framer-motion'
 import jsQR from 'jsqr'
-
-// Ranglar palettasi
-const COLOR_PALETTE = [
-  { name: 'Қора', value: '#000000', textColor: 'text-white' },
-  { name: 'Оқ', value: '#FFFFFF', textColor: 'text-black' },
-  { name: 'Қизил', value: '#FF0000', textColor: 'text-white' },
-  { name: 'Кўк', value: '#0000FF', textColor: 'text-white' },
-  { name: 'Яшил', value: '#00FF00', textColor: 'text-black' },
-  { name: 'Сариқ', value: '#FFFF00', textColor: 'text-black' },
-  { name: 'Қўнғир', value: '#8B4513', textColor: 'text-white' },
-  { name: 'Кулранг', value: '#808080', textColor: 'text-white' },
-  { name: 'Тилларанг', value: '#FFD700', textColor: 'text-black' },
-  { name: 'Кумүш', value: '#C0C0C0', textColor: 'text-black' },
-  { name: 'Қизил-қўк', value: '#800080', textColor: 'text-white' },
-  { name: 'Тилла', value: '#FFA500', textColor: 'text-black' },
-  { name: 'Кўк-яшил', value: '#008080', textColor: 'text-white' },
-  { name: 'Мовий', value: '#000080', textColor: 'text-white' },
-  { name: 'Малахит', value: '#00FF7F', textColor: 'text-black' },
-  { name: 'Қизил-сариқ', value: '#FF4500', textColor: 'text-white' },
-]
-
-// Ўлчовлар
-const SIZE_OPTIONS = [
-  '36', '37', '38', '39', '40', '41', '42', '43', '44', '45',
-  '46', '47', '48', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL',
-  'One Size', '32', '34', '36-38', '38-40', '40-42', '42-44',
-  '46-48', '48-50', '50-52', '52-54', '54-56'
-]
-
-// Стиллар
-const STYLE_OPTIONS = [
-  { value: 'classic', label: 'Классик' },
-  { value: 'sport', label: 'Спорт' },
-  { value: 'casual', label: 'Кэжуал' },
-  { value: 'formal', label: 'Расмий' },
-  { value: 'modern', label: 'Модерн' },
-  { value: 'vintage', label: 'Винтаж' },
-  { value: 'elegant', label: 'Элегант' },
-  { value: 'street', label: 'Стрит' },
-  { value: 'luxury', label: 'Люкс' },
-  { value: 'minimal', label: 'Минимал' },
-]
+import { scanned } from '../assets/js/saund'
 
 export default function AddProductModal({ open, setOpen, mutate }) {
   const { user, dark } = useContext(ContextData)
@@ -81,27 +36,14 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     gender: 'men',
     season: 'all',
     material: 'Unknown',
-    description: '',
-    mainImages: [],
-    types: []
+    count: 0,
+    mainImages: []
   })
-
-  const [variants, setVariants] = useState([
-    {
-      model: '', // Model maydoni qo'shildi
-      color: '',
-      size: '',
-      style: 'classic',
-      images: [],
-      count: 0
-    }
-  ])
 
   const [mainImages, setMainImages] = useState([])
   const [loading, setLoading] = useState(false)
   const [imageUploading, setImageUploading] = useState(false)
   const [error, setError] = useState('')
-  const [currentStep, setCurrentStep] = useState(1)
   const [selectedImages, setSelectedImages] = useState({})
   const [showImagePreview, setShowImagePreview] = useState(null)
 
@@ -110,10 +52,13 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState('')
   const [scanError, setScanError] = useState('')
-  const [scanningFor, setScanningFor] = useState('') // 'sku' yoki 'model'
-  const [cameraFullscreen, setCameraFullscreen] = useState(false) // Camera preview uchun
+  const [cameraFullscreen, setCameraFullscreen] = useState(false)
 
-  const fileInputRef = useRef(null)
+  // SKU check states
+  const [checkingSku, setCheckingSku] = useState(false)
+  const [skuStatus, setSkuStatus] = useState(null) // null, 'exists', 'not_found'
+  const [existingProduct, setExistingProduct] = useState(null)
+
   const mainImagesInputRef = useRef(null)
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -146,10 +91,67 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     { value: 'all', label: 'Барча фасл' }
   ]
 
-  // Scanner functions
-  const startScan = async (forWhat = 'sku') => {
+  // SKU ni tekshirish
+  const checkSku = async (sku) => {
+    if (!sku.trim()) {
+      setSkuStatus(null)
+      setExistingProduct(null)
+      return
+    }
+
     try {
-      setScanningFor(forWhat)
+      setCheckingSku(true)
+      const response = await Fetch.get(`/products/check?sku=${encodeURIComponent(sku)}`)
+
+      if (response.data.product) {
+        setSkuStatus('exists')
+        setExistingProduct(response.data.product)
+
+        // Автомат заполнение полей из существующего продукта
+        setProductData(prev => ({
+          ...prev,
+          title: response.data.product.title,
+          price: response.data.product.price.toString(),
+          category: response.data.product.category,
+          gender: response.data.product.gender,
+          season: response.data.product.season,
+          material: response.data.product.material,
+          mainImages: response.data.product.mainImages || []
+        }))
+
+        if (response.data.product.mainImages?.length > 0) {
+          setMainImages(response.data.product.mainImages)
+        }
+      } else {
+        setSkuStatus('not_found')
+        setExistingProduct(null)
+      }
+    } catch (error) {
+      console.error('SKU check error:', error)
+      setSkuStatus('error')
+      setExistingProduct(null)
+    } finally {
+      setCheckingSku(false)
+    }
+  }
+
+  // SKU input'ni o'zgartirganda tekshirish
+  useEffect(() => {
+    if (productData.sku && productData.sku.trim().length >= 3) {
+      const timer = setTimeout(() => {
+        checkSku(productData.sku)
+      }, 500)
+
+      return () => clearTimeout(timer)
+    } else {
+      setSkuStatus(null)
+      setExistingProduct(null)
+    }
+  }, [productData.sku])
+
+  // Scanner functions
+  const startScan = async () => {
+    try {
       setScanError('')
       setScanResult('')
       setCameraFullscreen(false)
@@ -188,8 +190,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   }
 
   const scanLoop = () => {
-    if (!videoRef.current || !canvasRef.current || !scanning) return
-
+    const scanSound = new Audio(`data:audio/wav;base64,${scanned}`)
     const video = videoRef.current
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
@@ -199,7 +200,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       return
     }
 
-    // Canvas o'lchamlarini video o'lchamlariga moslashtirish
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
 
@@ -211,21 +211,10 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
       if (code?.data) {
         setScanResult(code.data)
+        setProductData(prev => ({ ...prev, sku: code.data }))
+        scanSound.volume = 1
+        scanSound.play().catch(() => { })
 
-        // Nima uchun scan qilinganligiga qarab malumotni joylashtirish
-        if (scanningFor === 'sku') {
-          setProductData(prev => ({ ...prev, sku: code.data }))
-        } else if (scanningFor === 'model') {
-          // Faqat joriy variant uchun modelni o'zgartirish
-          const newVariants = [...variants]
-          const lastIndex = newVariants.length - 1
-          if (lastIndex >= 0) {
-            newVariants[lastIndex].model = code.data
-            setVariants(newVariants)
-          }
-        }
-
-        // Scan qilinganidan keyin avtomatik stop
         setTimeout(() => {
           stopScan()
           setShowScanner(false)
@@ -235,6 +224,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     } catch (err) {
       console.error('QR scanning error:', err)
     }
+
 
     rafRef.current = requestAnimationFrame(scanLoop)
   }
@@ -263,7 +253,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     setCameraFullscreen(!cameraFullscreen)
   }
 
-  // Fullscreen o'zgarishlarini kuzatish
   useEffect(() => {
     const handleFullscreenChange = () => {
       setCameraFullscreen(
@@ -298,59 +287,27 @@ export default function AddProductModal({ open, setOpen, mutate }) {
         ...prev,
         [field]: filtered
       }))
+    } else if (field === 'count') {
+      const numValue = Math.max(0, parseInt(value) || 0)
+      setProductData(prev => ({
+        ...prev,
+        [field]: numValue
+      }))
+    } else if (field === 'sku') {
+      setProductData(prev => ({
+        ...prev,
+        [field]: value
+      }))
+      if (existingProduct && value !== existingProduct.sku) {
+        setExistingProduct(null)
+        setSkuStatus(null)
+      }
     } else {
       setProductData(prev => ({
         ...prev,
         [field]: value
       }))
     }
-  }
-
-  // 🔄 Variantni o'zgartirish
-  const handleVariantChange = (index, field, value) => {
-    const newVariants = [...variants]
-
-    if (field === 'count') {
-      newVariants[index][field] = Math.max(0, parseInt(value) || 0)
-    } else if (field === 'color' || field === 'size' || field === 'model') {
-      newVariants[index][field] = value.trim()
-    } else {
-      newVariants[index][field] = value
-    }
-
-    setVariants(newVariants)
-  }
-
-  // ➕ Yangi variant qo'shish
-  const addVariant = () => {
-    setVariants([...variants, {
-      model: '',
-      color: '',
-      size: '',
-      style: 'classic',
-      images: [],
-      count: 0
-    }])
-  }
-
-  // ❌ Variantni o'chirish
-  const removeVariant = (index) => {
-    if (variants.length <= 1) {
-      alert('Кам деганда битта вариант бўлиши керак!')
-      return
-    }
-
-    if (!confirm('Бу вариантни ўчирмоқчимисиз?')) return
-
-    const newVariants = [...variants]
-    newVariants.splice(index, 1)
-    setVariants(newVariants)
-
-    setSelectedImages(prev => {
-      const newSelected = { ...prev }
-      delete newSelected[index]
-      return newSelected
-    })
   }
 
   // 📸 Rasm yuklash funksiyasi
@@ -417,48 +374,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     }
   }
 
-  // 📸 Variant uchun rasmlarni yuklash
-  const handleVariantImagesUpload = async (e, variantIndex) => {
-    const files = Array.from(e.target.files)
-    if (files.length === 0) return
-
-    try {
-      setImageUploading(true)
-      const uploadedUrls = []
-
-      for (const file of files) {
-        try {
-          const url = await uploadImage(file)
-          uploadedUrls.push(url)
-        } catch (error) {
-          console.error(`Rasm yuklashda xatolik (${file.name}):`, error)
-        }
-      }
-
-      if (uploadedUrls.length > 0) {
-        const newVariants = [...variants]
-        if (!newVariants[variantIndex].images) {
-          newVariants[variantIndex].images = []
-        }
-        newVariants[variantIndex].images.push(...uploadedUrls)
-        setVariants(newVariants)
-
-        setSelectedImages(prev => ({
-          ...prev,
-          [variantIndex]: [...(prev[variantIndex] || []), ...uploadedUrls]
-        }))
-      }
-    } catch (error) {
-      console.error('Variant rasm yuklashda xatolik:', error)
-      setError('❌ Расм юклашда хатолик!')
-    } finally {
-      setImageUploading(false)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    }
-  }
-
   // 🗑️ Asosiy rasmni o'chirish
   const removeMainImage = (imageIndex) => {
     setMainImages(prev => prev.filter((_, i) => i !== imageIndex))
@@ -468,20 +383,8 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     }))
   }
 
-  // 🗑️ Variant rasmini o'chirish
-  const removeVariantImage = (variantIndex, imageIndex) => {
-    const newVariants = [...variants]
-    newVariants[variantIndex].images = newVariants[variantIndex].images.filter((_, i) => i !== imageIndex)
-    setVariants(newVariants)
-
-    setSelectedImages(prev => ({
-      ...prev,
-      [variantIndex]: (prev[variantIndex] || []).filter((_, i) => i !== imageIndex)
-    }))
-  }
-
-  // ✅ Form validation - Asosiy qadam
-  const validateStep1 = () => {
+  // ✅ Form validation
+  const validateForm = () => {
     if (!productData.title.trim()) {
       alert('❌ Маҳсулот номини киритинг')
       return false
@@ -492,41 +395,14 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       return false
     }
 
-    return true
-  }
-
-  // ✅ Form validation - Variantlar qadami
-  const validateStep2 = () => {
-    for (let i = 0; i < variants.length; i++) {
-      const variant = variants[i]
-
-      if (!variant.model.trim()) {
-        alert(`❌ ${i + 1}-вариант учун модель номини киритинг`)
-        return false
-      }
-
-      if (!variant.color.trim()) {
-        alert(`❌ ${i + 1}-вариант учун рангни киритинг`)
-        return false
-      }
-
-      if (!variant.size.trim()) {
-        alert(`❌ ${i + 1}-вариант учун ўлчамни киритинг`)
-        return false
-      }
-
-      if (variant.count < 0) {
-        alert(`❌ ${i + 1}-вариант учун сонини тўғри киритинг`)
-        return false
-      }
+    if (productData.count < 0) {
+      alert('❌ Дона сонини тўғри киритинг')
+      return false
     }
 
-    // Model nomlari takrorlanmasligi kerak
-    const modelNames = variants.map(v => v.model.trim()).filter(Boolean)
-    const uniqueModels = new Set(modelNames)
-
-    if (modelNames.length !== uniqueModels.size) {
-      alert('❌ Модель номлари такрорланмаслиги керак!')
+    // Agar SKU mavjud bo'lsa, count majburiy
+    if (skuStatus === 'exists' && productData.count <= 0) {
+      alert('❌ Дона сонини киритинг (маҳсулот омборда мавжуд)')
       return false
     }
 
@@ -535,29 +411,50 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
   // 💾 Formani yuborish
   const handleSubmit = async () => {
-    if (!validateStep1() || !validateStep2()) return
+    if (!validateForm()) return
 
     setLoading(true)
     try {
-      const payload = {
-        ...productData,
-        price: Number(productData.price),
-        types: variants.map(variant => ({
-          model: variant.model, // Model qo'shildi
-          color: variant.color,
-          size: variant.size,
-          style: variant.style,
-          images: variant.images || [],
-          count: Number(variant.count) || 0
-        }))
-      }
+      let payload;
 
-      const response = await Fetch.post('/products/create', payload)
+      // Agar product allaqachon mavjud bo'lsa, faqat count ni o'zgartirish
+      if (skuStatus === 'exists' && existingProduct) {
+        // Faqat count ni yangilash
+        const newCount = (existingProduct.count || 0) + Number(productData.count)
 
-      if (response.data.product) {
-        mutate()
-        resetForm()
-        setOpen(false)
+        payload = {
+          count: newCount
+        }
+
+        // PUT request bilan yangilash
+        const response = await Fetch.put(`/products/${existingProduct._id}`, payload)
+
+        if (response.data) {
+          mutate()
+          resetForm()
+          setOpen(false)
+        }
+      } else {
+        // Yangi product yaratish
+        payload = {
+          title: productData.title,
+          sku: productData.sku,
+          price: Number(productData.price),
+          category: productData.category,
+          gender: productData.gender,
+          season: productData.season,
+          material: productData.material,
+          count: Number(productData.count),
+          mainImages: productData.mainImages
+        }
+
+        const response = await Fetch.post('/products/create', payload)
+
+        if (response.data.product) {
+          mutate()
+          resetForm()
+          setOpen(false)
+        }
       }
     } catch (err) {
       console.error('Xatolik:', err)
@@ -581,24 +478,16 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       gender: 'men',
       season: 'all',
       material: 'Unknown',
-      description: '',
-      mainImages: [],
-      types: []
+      count: 0,
+      mainImages: []
     })
-    setVariants([{
-      model: '',
-      color: '',
-      size: '',
-      style: 'classic',
-      images: [],
-      count: 0
-    }])
     setMainImages([])
     setSelectedImages({})
-    setCurrentStep(1)
     setError('')
     setShowScanner(false)
     setCameraFullscreen(false)
+    setSkuStatus(null)
+    setExistingProduct(null)
     stopScan()
   }
 
@@ -609,8 +498,14 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   const borderColor = dark ? 'border-gray-700' : 'border-gray-200'
   const inputBg = dark ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300'
   const cardBg = dark ? 'bg-gray-800/50 border-gray-700' : 'bg-gradient-to-br from-gray-50 to-white border-gray-200'
-  const hoverBg = dark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
 
+  const formatPrice = (value) => {
+    if (!value) return "";
+    // faqat raqamlarni qoldiramiz
+    const numericValue = value.toString().replace(/\D/g, "");
+    // har 3 raqamdan keyin bo‘sh joy
+    return numericValue.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  };
   if (!open) return null
 
   return (
@@ -622,7 +517,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className='fixed inset-0 bg-black/60 backdrop-blur-sm z-[99]'
+            className='fixed top-0 h-screen inset-0 bg-black/60 backdrop-blur-sm z-[99]'
             onClick={() => setOpen(false)}
           />
 
@@ -632,7 +527,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className={`${modalBg} w-full max-w-6xl rounded-3xl shadow-2xl p-6 sm:p-8 space-y-8 relative max-h-[95vh] overflow-y-auto ${borderColor} border`}
+              className={`${modalBg} w-full max-w-4xl rounded-3xl shadow-2xl p-6 sm:p-8 space-y-8 relative max-h-[95vh] overflow-y-auto ${borderColor} border`}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
@@ -646,99 +541,102 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       Янги маҳсулот қўшиш
                     </h2>
                     <p className={`text-sm ${textMuted} mt-2`}>
-                      {currentStep === 1 ? 'Асосий маълумотлар' : 'Вариантлар (модель, ранг ва ўлчамлар)'}
+                      {skuStatus === 'exists' ? 'Маҳсулот омборда мавжуд. Фақат дона сонини қўшинг.' : 'Янги маҳсулот маълумотлари'}
                     </p>
                   </div>
                 </div>
 
-                {/* Progress Steps */}
-                <div className='flex items-center gap-4'>
-                  <div className='flex items-center gap-2'>
-                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${currentStep === 1
-                      ? 'bg-blue-500 text-white'
-                      : dark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'
-                      }`}>
-                      1. Асосий
-                    </div>
-                    <div className='w-4 h-px bg-gray-300 dark:bg-gray-700'></div>
-                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${currentStep === 2
-                      ? 'bg-purple-500 text-white'
-                      : dark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'
-                      }`}>
-                      2. Вариантлар
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => setOpen(false)}
-                    className={`p-2 rounded-xl transition-colors ${dark ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-500'}`}
-                  >
-                    <X size={24} />
-                  </button>
-                </div>
+                <button
+                  onClick={() => setOpen(false)}
+                  className={`p-2 rounded-xl transition-colors ${dark ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-500'}`}
+                >
+                  <X size={24} />
+                </button>
               </div>
 
-              {/* Step 1: Asosiy ma'lumotlar */}
-              {currentStep === 1 && (
+              {/* SKU Status Indicator */}
+              {checkingSku && (
+                <div className={`p-4 rounded-xl ${dark ? 'bg-blue-900/30 border-blue-700' : 'bg-blue-50 border-blue-200'} border`}>
+                  <div className='flex items-center gap-3'>
+                    <Loader2 className='h-5 w-5 animate-spin text-blue-500' />
+                    <p className='text-blue-600 dark:text-blue-300'>SKU текширилмоқда...</p>
+                  </div>
+                </div>
+              )}
+
+              {skuStatus === 'exists' && existingProduct && (
                 <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  className={`rounded-3xl border p-6 sm:p-8 ${cardBg}`}
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`p-4 rounded-xl ${dark ? 'bg-green-900/30 border-green-700' : 'bg-green-50 border-green-200'} border`}
                 >
-                  <div className='flex items-center gap-4 mb-8'>
-                    <div className='p-3 rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-500 shadow-lg'>
-                      <Package className='h-6 w-6 text-white' />
-                    </div>
-                    <div>
-                      <h3 className={`font-bold text-xl ${textColor}`}>
-                        Асосий маълумотлар
-                      </h3>
-                      <p className={`text-sm ${textMuted}`}>
-                        Маҳсулотнинг умумий параметрлари
+                  <div className='flex items-start gap-3'>
+                    <AlertCircle className='h-5 w-5 text-green-500 mt-0.5' />
+                    <div className='flex-1'>
+                      <p className='font-semibold text-green-600 dark:text-green-400 mb-2'>
+                        ✅ Бу SKU билан маҳсулот омборда мавжуд
+                      </p>
+                      <div className='grid grid-cols-2 gap-2 text-sm'>
+                        <div>
+                          <span className='text-gray-600 dark:text-gray-400'>Номи:</span>
+                          <span className='font-medium ml-2'>{existingProduct.title}</span>
+                        </div>
+                        <div>
+                          <span className='text-gray-600 dark:text-gray-400'>Ҳозирги дона:</span>
+                          <span className='font-medium ml-2'>{existingProduct.count || 0} дона</span>
+                        </div>
+                        <div>
+                          <span className='text-gray-600 dark:text-gray-400'>Нархи:</span>
+                          <span className='font-medium ml-2'>{existingProduct.price?.toLocaleString()} сўм</span>
+                        </div>
+                        <div>
+                          <span className='text-gray-600 dark:text-gray-400'>Категория:</span>
+                          <span className='font-medium ml-2'>{existingProduct.category}</span>
+                        </div>
+                      </div>
+                      <p className='text-sm text-green-600 dark:text-green-400 mt-2'>
+                        Фақат қўшимча дона сонини киритинг. Бошқа майдонлар автомат тўлдирилди.
                       </p>
                     </div>
                   </div>
+                </motion.div>
+              )}
 
-                  <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'>
-                    {/* 🔹 Номи */}
-                    <div className='space-y-3'>
-                      <label className={`text-sm font-semibold flex items-center gap-2 ${textColor}`}>
-                        <Package size={16} className='text-blue-500' />
-                        Номи <span className='text-red-500'>*</span>
-                      </label>
-                      <input
-                        type='text'
-                        value={productData.title}
-                        onChange={e => handleChange('title', e.target.value)}
-                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
-                        placeholder='Маҳсулот номи'
-                        required
-                      />
+              {skuStatus === 'not_found' && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`p-4 rounded-xl ${dark ? 'bg-blue-900/30 border-blue-700' : 'bg-blue-50 border-blue-200'} border`}
+                >
+                  <div className='flex items-start gap-3'>
+                    <AlertCircle className='h-5 w-5 text-blue-500 mt-0.5' />
+                    <div>
+                      <p className='font-semibold text-blue-600 dark:text-blue-400'>
+                        🔍 Бу SKU билан маҳсулот топилмади
+                      </p>
+                      <p className='text-sm text-blue-600 dark:text-blue-400 mt-1'>
+                        Янги маҳсулот сифатида қўшилиши учун барча майдонларни тўлдиринг.
+                      </p>
                     </div>
+                  </div>
+                </motion.div>
+              )}
 
-                    {/* 💰 Нархи */}
-                    <div className='space-y-3'>
-                      <label className={`text-sm font-semibold flex items-center gap-2 ${textColor}`}>
-                        <DollarSign size={16} className='text-green-500' />
-                        Нархи (сўм) <span className='text-red-500'>*</span>
-                      </label>
-                      <input
-                        type='text'
-                        value={productData.price}
-                        onChange={e => handleChange('price', e.target.value)}
-                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
-                        placeholder='100000'
-                        required
-                      />
-                    </div>
-
-                    {/* 📦 SKU with Scanner */}
+              {/* Main Form */}
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className={`rounded-3xl border p-6 sm:p-8 ${cardBg}`}
+              >
+                <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+                  {/* Left Column - Basic Info */}
+                  <div className='space-y-6'>
+                    {/* 🔹 SKU with Scanner */}
                     <div className='space-y-3'>
                       <label className={`text-sm font-semibold flex items-center justify-between ${textColor}`}>
                         <div className='flex items-center gap-2'>
                           <IdCard size={16} className='text-blue-500' />
-                          SKU
+                          SKU <span className='text-red-500'>*</span>
                         </div>
                         <button
                           type='button'
@@ -756,6 +654,8 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                           onChange={e => handleChange('sku', e.target.value)}
                           className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-10 ${inputBg}`}
                           placeholder='SKU'
+                          required
+                          disabled={skuStatus === 'exists'}
                         />
                         {productData.sku && (
                           <button
@@ -769,6 +669,87 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       </div>
                     </div>
 
+                    {/* 🔹 Номи */}
+                    <div className='space-y-3'>
+                      <label className={`text-sm font-semibold flex items-center gap-2 ${textColor}`}>
+                        <Package size={16} className='text-blue-500' />
+                        Номи <span className='text-red-500'>*</span>
+                      </label>
+                      <input
+                        type='text'
+                        value={productData.title}
+                        onChange={e => handleChange('title', e.target.value)}
+                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
+                        placeholder='Маҳсулот номи'
+                        required
+                        disabled={skuStatus === 'exists'}
+                      />
+                    </div>
+
+                    {/* 💰 Нархи */}
+                    <div className='space-y-3'>
+                      <label className={`text-sm font-semibold flex items-center gap-2 ${textColor}`}>
+                        <DollarSign size={16} className='text-green-500' />
+                        Нархи (сўм) <span className='text-red-500'>*</span>
+                      </label>
+                      <input
+                        type='text'
+                        value={formatPrice(productData.price)}
+                        onChange={e => {
+                          const numericValue = e.target.value.replace(/\D/g, "");
+                          handleChange('price', numericValue);
+                        }}
+                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
+                        placeholder='100 000'
+                        required
+                        readOnly={skuStatus === 'exists'}
+                      />
+
+                    </div>
+
+                    {/* 📦 Дона сони */}
+                    <div className='space-y-3'>
+                      <label className={`text-sm font-semibold flex items-center gap-2 ${textColor}`}>
+                        <Box size={16} className='text-purple-500' />
+                        Дона сони <span className='text-red-500'>*</span>
+                      </label>
+                      <div className='relative'>
+                        <input
+                          type='number'
+                          min='0'
+                          value={productData.count}
+                          onChange={e => handleChange('count', e.target.value)}
+                          className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all ${inputBg}`}
+                          placeholder='0'
+                          required
+                        />
+                        <div className='absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-1'>
+                          <button
+                            type='button'
+                            onClick={() => handleChange('count', Math.max(0, (productData.count || 0) - 1))}
+                            className={`p-1.5 rounded-lg ${dark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
+                          >
+                            <span className='h-3 w-3 flex items-center justify-center'>-</span>
+                          </button>
+                          <button
+                            type='button'
+                            onClick={() => handleChange('count', (productData.count || 0) + 1)}
+                            className={`p-1.5 rounded-lg ${dark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
+                          >
+                            <Plus size={12} />
+                          </button>
+                        </div>
+                      </div>
+                      {skuStatus === 'exists' && existingProduct && (
+                        <p className='text-xs text-gray-500'>
+                          Ҳозирги дона: {existingProduct.count || 0} | Жами: {(existingProduct.count || 0) + (productData.count || 0)} дона
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right Column - Category & Images */}
+                  <div className='space-y-6'>
                     {/* 📂 Категория */}
                     <div className='space-y-3'>
                       <label className={`text-sm font-semibold ${textColor}`}>
@@ -778,6 +759,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         value={productData.category}
                         onChange={e => handleChange('category', e.target.value)}
                         className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
+                        disabled={skuStatus === 'exists'}
                       >
                         {categories.map(cat => (
                           <option key={cat.value} value={cat.value}>
@@ -796,6 +778,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         value={productData.gender}
                         onChange={e => handleChange('gender', e.target.value)}
                         className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
+                        disabled={skuStatus === 'exists'}
                       >
                         {genders.map(g => (
                           <option key={g.value} value={g.value}>
@@ -814,6 +797,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         value={productData.season}
                         onChange={e => handleChange('season', e.target.value)}
                         className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
+                        disabled={skuStatus === 'exists'}
                       >
                         {seasons.map(s => (
                           <option key={s.value} value={s.value}>
@@ -823,9 +807,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       </select>
                     </div>
 
-                  </div>
-                  {/* Материал ва тавсиф */}
-                  <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8'>
                     {/* Материал */}
                     <div className='space-y-3'>
                       <label className={`text-sm font-semibold flex items-center gap-2 ${textColor}`}>
@@ -838,480 +819,146 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         onChange={e => handleChange('material', e.target.value)}
                         className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
                         placeholder='Чарм, мато, пластмасса...'
-                      />
-                    </div>
-
-                    {/* Тавсиф */}
-                    <div className='space-y-3'>
-                      <label className={`text-sm font-semibold ${textColor}`}>
-                        Қўшимча тавсиф
-                      </label>
-                      <textarea
-                        value={productData.description}
-                        onChange={e => handleChange('description', e.target.value)}
-                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all min-h-[120px] ${inputBg}`}
-                        placeholder='Маҳсулот ҳақида қўшимча маълумот...'
-                        rows={4}
+                        disabled={skuStatus === 'exists'}
                       />
                     </div>
                   </div>
+                </div>
 
-                  {/* 📸 Асосий расмлар */}
-                  <div className='mt-8'>
-                    <div className='flex items-center justify-between mb-6'>
-                      <div className='flex items-center gap-3'>
-                        <div className='p-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500'>
-                          <ImageIcon className='h-5 w-5 text-white' />
-                        </div>
-                        <div>
-                          <h4 className={`font-semibold ${textColor}`}>
-                            Асосий расмлар
-                          </h4>
-                          <p className={`text-xs ${textMuted}`}>
-                            Маҳсулотнинг асосий кўриниш расмлари
-                          </p>
-                        </div>
+                {/* 📸 Асосий расмлар */}
+                <div className='mt-8'>
+                  <div className='flex items-center justify-between mb-6'>
+                    <div className='flex items-center gap-3'>
+                      <div className='p-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500'>
+                        <ImageIcon className='h-5 w-5 text-white' />
                       </div>
-                      <span className={`text-sm ${textMuted}`}>
-                        {mainImages.length} та расм
+                      <div>
+                        <h4 className={`font-semibold ${textColor}`}>
+                          Асосий расмлар
+                        </h4>
+                        <p className={`text-xs ${textMuted}`}>
+                          Маҳсулотнинг асосий кўриниш расмлари
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`text-sm ${textMuted}`}>
+                      {mainImages.length} та расм
+                    </span>
+                  </div>
+
+                  {/* File input */}
+                  <div className='mb-6'>
+                    <input
+                      type="file"
+                      id="main-images"
+                      multiple
+                      accept="image/*"
+                      onChange={handleMainImagesUpload}
+                      className="hidden"
+                      disabled={imageUploading || skuStatus === 'exists'}
+                      ref={mainImagesInputRef}
+                    />
+                    <label
+                      htmlFor="main-images"
+                      className={`flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border-2 border-dashed cursor-pointer transition-all hover:scale-[1.02] ${dark
+                        ? 'border-gray-600 hover:border-blue-500 hover:bg-blue-900/20'
+                        : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                        } ${imageUploading || skuStatus === 'exists' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {imageUploading ? (
+                        <Loader2 className='h-5 w-5 animate-spin text-gray-400' />
+                      ) : (
+                        <Upload className='h-5 w-5 text-gray-400' />
+                      )}
+                      <span className='font-medium'>
+                        {imageUploading ? 'Юкланмоқда...' :
+                          skuStatus === 'exists' ? 'Мавжуд маҳсулот учун расмлар ўзгартирилмайди' :
+                            'Расмларни юкланг (бир нечта танлаш мумкин)'}
                       </span>
-                    </div>
-
-                    {/* File input */}
-                    <div className='mb-6'>
-                      <input
-                        type="file"
-                        id="main-images"
-                        multiple
-                        accept="image/*"
-                        onChange={handleMainImagesUpload}
-                        className="hidden"
-                        disabled={imageUploading}
-                        ref={mainImagesInputRef}
-                      />
-                      <label
-                        htmlFor="main-images"
-                        className={`flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border-2 border-dashed cursor-pointer transition-all hover:scale-[1.02] ${dark
-                          ? 'border-gray-600 hover:border-blue-500 hover:bg-blue-900/20'
-                          : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
-                          } ${imageUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        {imageUploading ? (
-                          <Loader2 className='h-5 w-5 animate-spin text-gray-400' />
-                        ) : (
-                          <Upload className='h-5 w-5 text-gray-400' />
-                        )}
-                        <span className='font-medium'>
-                          {imageUploading ? 'Юкланмоқда...' : 'Расмларни юкланг (бир нечта танлаш мумкин)'}
-                        </span>
-                      </label>
-                    </div>
-
-                    {/* Preview images */}
-                    {mainImages.length > 0 && (
-                      <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4'>
-                        {mainImages.map((img, idx) => (
-                          <div key={idx} className='relative group'>
-                            <div className='aspect-square rounded-xl overflow-hidden border-2 border-transparent group-hover:border-blue-500 transition-all duration-300'>
-                              <img
-                                src={img}
-                                alt={`Main ${idx + 1}`}
-                                className='w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform duration-300'
-                                onClick={() => setShowImagePreview(img)}
-                              />
-                            </div>
-                            <button
-                              onClick={() => removeMainImage(idx)}
-                              className='absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:scale-110'
-                              title='Ўчириш'
-                            >
-                              <X size={14} />
-                            </button>
-                            <div className='absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full'>
-                              {idx + 1}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    </label>
                   </div>
 
-                  {/* Navigation Buttons */}
-                  <div className='flex justify-end gap-4 mt-10 pt-8 border-t border-gray-200 dark:border-gray-700'>
-                    <button
-                      onClick={() => setOpen(false)}
-                      className={`px-8 py-3 rounded-xl border-2 transition-all font-medium ${dark
-                        ? 'border-gray-600 hover:bg-gray-700 text-white'
-                        : 'border-gray-300 hover:bg-gray-50 text-gray-700'
-                        } hover:scale-105`}
-                    >
-                      Бекор қилиш
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (validateStep1()) {
-                          setCurrentStep(2)
-                        }
-                      }}
-                      className='flex items-center gap-3 px-8 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg hover:shadow-xl hover:scale-105 font-medium'
-                    >
-                      <Layers className='h-5 w-5' />
-                      Вариантларга ўтиш ({variants.length})
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* Step 2: Variantlar */}
-              {currentStep === 2 && (
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className='space-y-6'
-                >
-                  <div className={`rounded-3xl border p-6 sm:p-8 ${cardBg}`}>
-                    <div className='flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8'>
-                      <div className='flex items-center gap-4'>
-                        <div className='p-3 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 shadow-lg'>
-                          <Palette className='h-6 w-6 text-white' />
-                        </div>
-                        <div>
-                          <h3 className={`font-bold text-xl ${textColor}`}>
-                            Вариантлар (Модель, ранг ва ўлчамлар)
-                          </h3>
-                          <p className={`text-sm ${textMuted}`}>
-                            Ҳар бир модель ранг-ўлчам жуфти учун алохида миқдор ва расм
-                          </p>
-                        </div>
-                      </div>
-                      <div className='flex items-center gap-4'>
-                        <span className={`text-sm ${textMuted}`}>
-                          {variants.length} та вариант
-                        </span>
-                        <button
-                          onClick={addVariant}
-                          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all hover:scale-105 ${dark
-                            ? 'bg-purple-700 hover:bg-purple-600 text-white'
-                            : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600'
-                            }`}
-                        >
-                          <Plus size={16} />
-                          Вариант қўшиш
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Variantlar ro'yxati */}
-                    {variants.map((variant, index) => (
-                      <motion.div
-                        key={index}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className={`rounded-2xl border p-6 mb-6 last:mb-0 transition-all duration-300 hover:shadow-xl ${dark ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200'}`}
-                      >
-                        {/* Variant header */}
-                        <div className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b ${borderColor}`}>
-                          <div className='flex items-center gap-3'>
-                            <div className='p-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500'>
-                              <Grid className='h-5 w-5 text-white' />
-                            </div>
-                            <div>
-                              <h4 className={`font-semibold ${textColor}`}>
-                                Вариант #{index + 1}
-                              </h4>
-                              <p className={`text-xs ${textMuted}`}>
-                                Модель: {variant.model || '—'} | Ранг: {variant.color || '—'} | Ўлчам: {variant.size || '—'} | Сони: {variant.count}
-                              </p>
-                            </div>
+                  {/* Preview images */}
+                  {mainImages.length > 0 && (
+                    <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4'>
+                      {mainImages.map((img, idx) => (
+                        <div key={idx} className='relative group'>
+                          <div className='aspect-square rounded-xl overflow-hidden border-2 border-transparent group-hover:border-blue-500 transition-all duration-300'>
+                            <img
+                              src={img}
+                              alt={`Main ${idx + 1}`}
+                              className='w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform duration-300'
+                              onClick={() => setShowImagePreview(img)}
+                            />
                           </div>
-
-                          <div className='flex items-center gap-2'>
-                            {variants.length > 1 && (
-                              <button
-                                onClick={() => removeVariant(index)}
-                                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105 ${dark
-                                  ? 'text-red-400 hover:bg-red-900/50'
-                                  : 'text-red-600 hover:bg-red-50'
-                                  }`}
-                              >
-                                <Trash2 size={16} />
-                                Ўчириш
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Variant form */}
-                        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6'>
-                          {/* Модель номи */}
-                          <div className='space-y-3 lg:col-span-2'>
-                            <label className={`text-sm font-semibold flex items-center justify-between ${textColor}`}>
-                              <div className='flex items-center gap-2'>
-                                <Box size={16} className='text-purple-500' />
-                                Модель номи <span className='text-red-500'>*</span>
-                              </div>
-                              <button
-                                type='button'
-                                onClick={() => {
-                                  setScanningFor('model')
-                                  setShowScanner(true)
-                                }}
-                                className='flex items-center gap-1 px-2 py-1 text-xs rounded-lg bg-purple-500 hover:bg-purple-600 text-white transition-colors'
-                              >
-                                <QrCode size={10} />
-                                Сканер
-                              </button>
-                            </label>
-                            <div className='relative'>
-                              <input
-                                type='text'
-                                value={variant.model}
-                                onChange={e => handleVariantChange(index, 'model', e.target.value)}
-                                className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all ${inputBg}`}
-                                placeholder='Модель номи (масалан: Air Max 270)'
-                                required
-                              />
-                              {variant.model && (
-                                <button
-                                  type='button'
-                                  onClick={() => handleVariantChange(index, 'model', '')}
-                                  className='absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600'
-                                >
-                                  <X size={16} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Ранг */}
-                          <div className='space-y-3'>
-                            <label className={`text-sm font-semibold ${textColor}`}>
-                              Ранг <span className='text-red-500'>*</span>
-                            </label>
-                            <div className='relative'>
-                              <input
-                                type='text'
-                                value={variant.color}
-                                onChange={e => handleVariantChange(index, 'color', e.target.value)}
-                                className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all ${inputBg}`}
-                                placeholder='Қора, оқ, кўк...'
-                                list={`colors-${index}`}
-                                required
-                              />
-                              <datalist id={`colors-${index}`}>
-                                {COLOR_PALETTE.map(color => (
-                                  <option key={color.name} value={color.name} />
-                                ))}
-                              </datalist>
-                            </div>
-                            <div className='flex flex-wrap gap-2 mt-2'>
-                              {COLOR_PALETTE.slice(0, 6).map(color => (
-                                <button
-                                  key={color.name}
-                                  type='button'
-                                  onClick={() => handleVariantChange(index, 'color', color.name)}
-                                  className='h-6 w-6 rounded-full border-2 transition-transform hover:scale-110'
-                                  style={{ backgroundColor: color.value }}
-                                  title={color.name}
-                                />
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Ўлчам */}
-                          <div className='space-y-3'>
-                            <label className={`text-sm font-semibold ${textColor}`}>
-                              Ўлчам <span className='text-red-500'>*</span>
-                            </label>
-                            <div className='relative'>
-                              <select
-                                value={variant.size}
-                                onChange={e => handleVariantChange(index, 'size', e.target.value)}
-                                className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all ${inputBg}`}
-                                required
-                              >
-                                <option value=''>Танланг</option>
-                                {SIZE_OPTIONS.map(size => (
-                                  <option key={size} value={size}>{size}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Сони */}
-                          <div className='space-y-3'>
-                            <label className={`text-sm font-semibold ${textColor}`}>
-                              Сони <span className='text-red-500'>*</span>
-                            </label>
-                            <div className='relative'>
-                              <input
-                                type='number'
-                                min='0'
-                                value={variant.count}
-                                onChange={e => handleVariantChange(index, 'count', e.target.value)}
-                                className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all ${inputBg}`}
-                                placeholder='0'
-                                required
-                              />
-                              <div className='absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-1'>
-                                <button
-                                  type='button'
-                                  onClick={() => handleVariantChange(index, 'count', Math.max(0, (variant.count || 0) - 1))}
-                                  className={`p-1.5 rounded-lg ${dark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
-                                >
-                                  <span className='h-3 w-3 flex items-center justify-center'>-</span>
-                                </button>
-                                <button
-                                  type='button'
-                                  onClick={() => handleVariantChange(index, 'count', (variant.count || 0) + 1)}
-                                  className={`p-1.5 rounded-lg ${dark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
-                                >
-                                  <Plus size={12} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Стиль (алохита қаторда) */}
-                        <div className='mt-4'>
-                          <label className={`text-sm font-semibold ${textColor}`}>
-                            Стиль
-                          </label>
-                          <select
-                            value={variant.style}
-                            onChange={e => handleVariantChange(index, 'style', e.target.value)}
-                            className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all mt-1 ${inputBg}`}
+                          <button
+                            onClick={() => removeMainImage(idx)}
+                            className='absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:scale-110'
+                            title='Ўчириш'
+                            disabled={skuStatus === 'exists'}
                           >
-                            {STYLE_OPTIONS.map(style => (
-                              <option key={style.value} value={style.value}>
-                                {style.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Variant rasmlari */}
-                        <div className='mt-6'>
-                          <div className='flex items-center justify-between mb-4'>
-                            <div className='flex items-center gap-3'>
-                              <div className='p-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500'>
-                                <FileImage className='h-4 w-4 text-white' />
-                              </div>
-                              <div>
-                                <h5 className={`font-medium ${textColor}`}>
-                                  Ушбу вариант учун расмлар
-                                </h5>
-                                <p className={`text-xs ${textMuted}`}>
-                                  {variant.images?.length || 0} та расм
-                                </p>
-                              </div>
-                            </div>
-                            <div className='flex items-center gap-2'>
-                              <input
-                                type="file"
-                                id={`variant-images-${index}`}
-                                multiple
-                                accept="image/*"
-                                onChange={(e) => handleVariantImagesUpload(e, index)}
-                                className="hidden"
-                                disabled={imageUploading}
-                                ref={fileInputRef}
-                              />
-                              <label
-                                htmlFor={`variant-images-${index}`}
-                                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-all hover:scale-105 ${dark
-                                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                                  : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                                  }`}
-                              >
-                                <Upload size={14} />
-                                Расм қўшиш
-                              </label>
-                            </div>
+                            <X size={14} />
+                          </button>
+                          <div className='absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full'>
+                            {idx + 1}
                           </div>
-
-                          {/* Preview images */}
-                          {variant.images && variant.images.length > 0 ? (
-                            <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3'>
-                              {variant.images.map((img, imgIndex) => (
-                                <div key={imgIndex} className='relative group'>
-                                  <div className='aspect-square rounded-lg overflow-hidden border-2 border-transparent group-hover:border-purple-500 transition-all duration-300'>
-                                    <img
-                                      src={img}
-                                      alt={`Variant ${index + 1} - ${imgIndex + 1}`}
-                                      className='w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform duration-300'
-                                      onClick={() => setShowImagePreview(img)}
-                                    />
-                                  </div>
-                                  <button
-                                    onClick={() => removeVariantImage(index, imgIndex)}
-                                    className='absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:scale-110'
-                                    title='Ўчириш'
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                  <div className='absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded-full'>
-                                    {imgIndex + 1}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className='text-center py-8 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700'>
-                              <FileImage className='h-12 w-12 mx-auto text-gray-400 mb-3' />
-                              <p className={`text-sm ${textMuted}`}>
-                                Ушбу вариант учун расмлар мавжуд эмас
-                              </p>
-                            </div>
-                          )}
                         </div>
-                      </motion.div>
-                    ))}
-                  </div>
-
-                  {/* Navigation Buttons */}
-                  <div className='flex flex-col sm:flex-row justify-between gap-4 pt-6 border-t border-gray-200 dark:border-gray-700'>
-                    <div className={`text-sm ${textMuted}`}>
-                      Жами: {variants.length} та вариант |
-                      Уникал модельлар: {new Set(variants.map(v => v.model).filter(Boolean)).size} |
-                      Дона: {variants.reduce((sum, v) => sum + (v.count || 0), 0)} |
-                      Расм: {variants.reduce((sum, v) => sum + (v.images?.length || 0), 0)}
+                      ))}
                     </div>
+                  )}
+                </div>
 
-                    <div className='flex flex-col sm:flex-row gap-4 w-full sm:w-auto'>
-                      <button
-                        onClick={() => setCurrentStep(1)}
-                        className={`px-8 py-3 rounded-xl border-2 transition-all font-medium ${dark
-                          ? 'border-gray-600 hover:bg-gray-700 text-white'
-                          : 'border-gray-300 hover:bg-gray-50 text-gray-700'
-                          } hover:scale-105`}
-                      >
-                        Ортга қайтиш
-                      </button>
-                      <button
-                        onClick={handleSubmit}
-                        disabled={loading || imageUploading}
-                        className='flex items-center justify-center gap-3 px-8 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed font-medium'
-                      >
-                        {loading ? (
-                          <>
-                            <Loader2 className='h-5 w-5 animate-spin' />
-                            Сақланишда...
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className='h-5 w-5' />
-                            Маҳсулотни сақлаш ({variants.length} вариант)
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
+                {/* Action Buttons */}
+                <div className='flex flex-col sm:flex-row justify-end gap-4 mt-10 pt-8 border-t border-gray-200 dark:border-gray-700'>
+                  <button
+                    onClick={() => setOpen(false)}
+                    className={`px-8 py-3 rounded-xl border-2 transition-all font-medium ${dark
+                      ? 'border-gray-600 hover:bg-gray-700 text-white'
+                      : 'border-gray-300 hover:bg-gray-50 text-gray-700'
+                      } hover:scale-105`}
+                  >
+                    Бекор қилиш
+                  </button>
+
+                  {skuStatus === 'exists' ? (
+                    <button
+                      onClick={handleSubmit}
+                      disabled={loading || productData.count <= 0}
+                      className='flex items-center justify-center gap-3 px-8 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed font-medium'
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className='h-5 w-5 animate-spin' />
+                          Сақланишда...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className='h-5 w-5' />
+                          {productData.count} дона қўшиш
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSubmit}
+                      disabled={loading}
+                      className='flex items-center justify-center gap-3 px-8 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed font-medium'
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className='h-5 w-5 animate-spin' />
+                          Сақланишда...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className='h-5 w-5' />
+                          Маҳсулотни сақлаш
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </motion.div>
 
               {/* Error message */}
               {error && (
@@ -1330,14 +977,14 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                   <p className='font-semibold mb-2'>📝 Эслатма:</p>
                   <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-left'>
                     <div className='space-y-1'>
-                      <li><span className='font-semibold'>Ном, нарх ва модель</span> мажбурий майдонлар</li>
-                      <li>Ҳар бир вариант учун <span className='font-semibold'>модель, ранг, ўлчам ва сони</span> мажбурий</li>
-                      <li>Модель номлари уникал бўлиши шарт</li>
+                      <li><span className='font-semibold'>SKU, ном, нарх ва дона</span> мажбурий майдонлар</li>
+                      <li>SKU киритилганда автомат текширилади</li>
+                      <li>SKU мавжуд бўлса, фақат дона қўшиш мумкин</li>
                     </div>
                     <div className='space-y-1'>
-                      <li>SKU ва модель номи учун QR сканер ишлатиш мумкин</li>
-                      <li>Сони 0 бўлса, маҳсулот сотилган деб ҳисобланади</li>
-                      <li>Бир вариантнинг бир нечта расми бўлиши мумкин</li>
+                      <li>SKU учун QR сканер ишлатиш мумкин</li>
+                      <li>Янги маҳсулот учун барча майдонлар тўлдирилади</li>
+                      <li>Мавжуд маҳсулотнинг расмлари ўзгартирилмайди</li>
                     </div>
                   </div>
                 </div>
@@ -1371,7 +1018,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       <div className='flex items-center gap-3'>
                         <Camera className='h-6 w-6 text-white' />
                         <h3 className='text-xl font-bold text-white'>
-                          QR код сканер {scanningFor === 'model' ? '(Модель)' : '(SKU)'}
+                          QR код сканер (SKU)
                         </h3>
                       </div>
                       <div className='flex items-center gap-2'>
@@ -1398,9 +1045,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       </div>
                     </div>
                     <p className='text-blue-200 text-sm mt-2'>
-                      {scanningFor === 'model'
-                        ? 'Модель номи учун QR кодни камерага кўрсатинг'
-                        : 'SKU учун QR кодни камерага кўрсатинг'}
+                      SKU учун QR кодни камерага кўрсатинг
                     </p>
                   </div>
 
@@ -1424,33 +1069,19 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         {/* Scanning overlay */}
                         {scanning && (
                           <>
-                            {/* Scanner border */}
                             <div className='absolute inset-0 border-2 border-blue-500/30 pointer-events-none'></div>
 
-                            {/* Center scanning area */}
                             <div className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64'>
-                              {/* Corner borders */}
                               <div className='absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-blue-500'></div>
                               <div className='absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-blue-500'></div>
                               <div className='absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-blue-500'></div>
                               <div className='absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-blue-500'></div>
 
-                              {/* Scanning line */}
                               <div className='absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent animate-scan'>
-                                <style jsx>{`
-                                  @keyframes scan {
-                                    0% { transform: translateY(0); }
-                                    50% { transform: translateY(256px); }
-                                    100% { transform: translateY(0); }
-                                  }
-                                  .animate-scan {
-                                    animation: scan 2s ease-in-out infinite;
-                                  }
-                                `}</style>
+
                               </div>
                             </div>
 
-                            {/* Instructions */}
                             <div className='absolute bottom-4 left-0 right-0 text-center'>
                               <div className='inline-block bg-black/70 text-white px-4 py-2 rounded-full text-sm'>
                                 📷 QR кодни марказга келтиринг
@@ -1463,7 +1094,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         <div className='absolute bottom-4 right-4 flex items-center gap-2'>
                           {!scanning && (
                             <button
-                              onClick={() => startScan(scanningFor)}
+                              onClick={() => startScan()}
                               className='flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-medium transition-all hover:scale-105'
                             >
                               <Camera className='h-4 w-4' />
@@ -1489,16 +1120,11 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                             <p className='text-green-400 text-lg font-mono mt-1 break-all'>
                               {scanResult}
                             </p>
-                            <p className='text-green-400 text-xs mt-2'>
-                              {scanningFor === 'model'
-                                ? 'Модель майдонга автомат равишда киритилди'
-                                : 'SKU майдонга автомат равишда киритилди'}
-                            </p>
                           </div>
                           <button
                             onClick={() => {
                               setScanResult('')
-                              startScan(scanningFor)
+                              startScan()
                             }}
                             className='p-2 hover:bg-green-800 rounded-lg transition-colors'
                             title='Янги скан'
@@ -1508,49 +1134,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         </div>
                       </div>
                     )}
-
-                    <div className='mt-4 space-y-3'>
-                      <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
-                        <div className='text-center p-3 bg-blue-900/30 rounded-lg'>
-                          <div className='text-blue-300 text-xs mb-1'>СКАНЕР ҲОЛАТИ</div>
-                          <div className='text-white font-medium'>
-                            {scanning ? (
-                              <span className='text-green-400'>🟢 Фаол</span>
-                            ) : (
-                              <span className='text-yellow-400'>🟡 Ҳозирланмоқда</span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className='text-center p-3 bg-blue-900/30 rounded-lg'>
-                          <div className='text-blue-300 text-xs mb-1'>СКАНЕРА ОЧИШ</div>
-                          <button
-                            onClick={() => scanning ? stopScan() : startScan(scanningFor)}
-                            className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${scanning
-                              ? 'bg-red-500 hover:bg-red-600 text-white'
-                              : 'bg-blue-500 hover:bg-blue-600 text-white'
-                              }`}
-                          >
-                            {scanning ? 'Тўхтатиш' : 'Бошлаш'}
-                          </button>
-                        </div>
-
-                        <div className='text-center p-3 bg-blue-900/30 rounded-lg'>
-                          <div className='text-blue-300 text-xs mb-1'>КАМЕРА РЕЖИМИ</div>
-                          <div className='text-white font-medium'>
-                            {cameraFullscreen ? '📺 Тўлиқ экран' : '📱 Одатда'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className='text-center p-3 bg-gray-800/50 rounded-lg'>
-                        <p className='text-gray-400 text-sm'>
-                          📱 Камерани QR кодга қаратинг |
-                          🌟 Ёруғроқ жойда сканлаш маъқул |
-                          ⚡ Автоматик таниш
-                        </p>
-                      </div>
-                    </div>
                   </div>
                 </motion.div>
               </motion.div>
@@ -1594,4 +1177,3 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     </AnimatePresence>
   )
 }
-

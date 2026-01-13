@@ -6,78 +6,62 @@ export const CreateNewProduct = async (req, res) => {
   try {
     const data = req.body;
 
-    /* =======================
-       1️⃣ SKU TEKSHIRISH
-    ======================= */
-    if (data.sku && data.sku.trim() !== "") {
-      const skuExists = await Product.findOne({ sku: data.sku });
-      if (skuExists) {
-        return res.status(400).json({
-          message: "Бу SKU аллақачон ишлатилган. Илтимос, бошқасини танланг.",
-          field: "sku"
-        });
-      }
-    }
-
-    /* =======================
-       2️⃣ TYPES MODEL TEKSHIRИШ
-    ======================= */
-    if (Array.isArray(data.types) && data.types.length > 0) {
-
-      // ➤ Ichida bir xil model bormi
-      const models = data.types.map(t => t.model);
-      const uniqueModels = new Set(models);
-
-      if (models.length !== uniqueModels.size) {
-        return res.status(400).json({
-          message: "Бир хил модель номлари киритилган. Ҳар бир модель уникал бўлиши шарт.",
-          field: "types.model"
-        });
-      }
-
-      // ➤ Bazada oldin ishlatilganmi
-      const modelExists = await Product.findOne({
-        "types.model": { $in: models }
+    if (!data.sku) {
+      return res.status(400).json({
+        message: "SKU мажбурий",
       });
+    }
 
-      if (modelExists) {
-        return res.status(400).json({
-          message: "Киритилган модель номларидан бири олдин рўйхатдан ўтган.",
-          field: "types.model"
-        });
-      }
+    const incomingCount = Number(data.count) || 0;
+
+    /* =======================
+       1️⃣ SKU bo‘yicha qidirish
+    ======================= */
+    const existingProduct = await Product.findOne({ sku: data.sku });
+
+    /* =======================
+       2️⃣ Agar product mavjud bo‘lsa
+    ======================= */
+    if (existingProduct) {
+      existingProduct.count =
+        (existingProduct.count || 0) + incomingCount;
+
+      await existingProduct.save();
+
+      return res.status(200).json({
+        message: "Маҳсулот миқдори янгиланди ✅",
+        product: existingProduct,
+        updated: true
+      });
     }
 
     /* =======================
-       3️⃣ PRODUCT CREATE
+       3️⃣ Aks holda yangi product
     ======================= */
     const newProduct = await Product.create({
       title: data.title,
-      sku: data.sku || "",
-      price: data.price,
+      sku: data.sku,
       category: data.category,
       gender: data.gender,
       season: data.season,
       material: data.material,
       mainImages: data.mainImages || [],
       description: data.description || "",
-      types: data.types || [],
+      count: incomingCount
     });
 
     return res.status(201).json({
       message: "Маҳсулот муваффақиятли яратилди ✅",
-      product: newProduct
+      product: newProduct,
+      created: true
     });
 
   } catch (error) {
     console.error("CreateNewProduct error:", error);
 
-    /* =======================
-       4️⃣ MONGOOSE UNIQUE ERROR
-    ======================= */
     if (error.code === 11000) {
-      return res.status(400).json({
-        message: "Маълумот уникал бўлиши шарт. Қайта уриниб кўринг.",
+      return res.status(409).json({
+        message: "Бу SKU аллақачон мавжуд!",
       });
     }
 
@@ -166,40 +150,57 @@ export const GetAllProducts = async (req, res) => {
 export const UpdateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-
-    if (req.body.price === 0) {
-      delete req.body.price;
-    }
-
-    if (req.body.title) {
-      req.body.normalizedTitle = normalize(req.body.title);
-    }
-
     const product = await Product.findById(id);
+
     if (!product) {
-      return res.status(404).json({ message: "Mahsulot topilmadi." });
+      return sendErrorResponse(res, 404, "Маҳсулот топилмади!");
     }
 
-    Object.assign(product, req.body);
-    const updatedProduct = await product.save();
+    // 🔒 COUNT
+    if (req.body.count !== undefined) {
+      const raw = req.body.count;
+      const parsed = typeof raw === "object"
+        ? Number(raw.count)
+        : Number(raw);
 
-    return res.status(200).json({
-      message: "Mahsulot muvaffaqiyatli yangilandi ✅",
-      data: updatedProduct
+      if (isNaN(parsed)) {
+        return sendErrorResponse(res, 400, "count нотўғри форматда!");
+      }
+
+      product.count = parsed;
+    }
+
+    // 🔹 boshqa maydonlar
+    const allowedFields = [
+      "title",
+      "price",
+      "category",
+      "season",
+      "material",
+      "gender",
+      "mainImages",
+      "status"
+    ];
+
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        product[field] = req.body[field];
+      }
+    });
+
+    await product.save();
+
+    return res.json({
+      message: "Маҳсулот муваффақиятли янгиланди ✅",
+      data: product
     });
 
   } catch (error) {
-    if (error.name === "CastError") {
-      return res.status(400).json({ message: "Noto‘g‘ri mahsulot ID si." });
-    }
-
     console.error("UpdateProduct Error:", error);
-    return res.status(500).json({
-      message: "Serverda xatolik yuz berdi. Iltimos, keyinroq urinib ko‘ring!",
-      error: error.message
-    });
+    return sendErrorResponse(res, 500, "Сервер хатолиги!");
   }
 };
+
 
 export const DeleteProduct = async (req, res) => {
   const { id } = req.params
@@ -232,7 +233,7 @@ export const Scanner = async (req, res) => {
     if (!product) {
       return sendErrorResponse(res, 404, 'топилмади!')
     }
-    return res.status(200).json({ data: product })
+    return res.status(200).json({ product })
   } catch (error) {
     console.log(error);
     return sendErrorResponse(
@@ -244,34 +245,34 @@ export const Scanner = async (req, res) => {
   }
 }
 
-export const ScannerModel = async (req, res) => {
-  const { id } = req.params;
-
+export const CheckSku = async (req, res) => {
   try {
-    const product = await Product.findOne(
-      { "types.model": id },
-      { "types.$": 1, title: 1, category: 1 }
-    );
+    const { sku } = req.query;
+
+    if (!sku) {
+      return res.status(400).json({
+        message: "SKU юборилмади",
+      });
+    }
+
+    // 🔹 Async query uchun await kerak
+    const product = await Product.findOne({ sku });
 
     if (!product) {
-      return sendErrorResponse(res, 404, "топилмади!");
+      return res.status(404).json({
+        message: "Топилмади",
+      });
     }
 
     return res.status(200).json({
-      data: product.types[0], // aynan topilgan type
-      productInfo: {
-        title: product.title,
-        category: product.category
-      }
+      sku,
+      product
     });
 
   } catch (error) {
-    console.log(error);
-    return sendErrorResponse(
-      res,
-      500,
-      "Сервер хатолиги. Илтимос, кейинроқ уриниб кўринг!",
-      error
-    );
+    console.error("CheckSku error:", error);
+    return res.status(500).json({
+      message: "Серверда хатолик юз берди!",
+    });
   }
 };

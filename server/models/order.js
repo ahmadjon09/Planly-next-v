@@ -15,12 +15,6 @@ const OrderSchema = new mongoose.Schema({
         required: true
       },
 
-      variant: {
-        color: { type: String, default: "####" },
-        size: { type: String, default: "####" },
-        style: { type: String, default: "classic" }
-      },
-
       quantity: {
         type: Number,
         required: true,
@@ -34,20 +28,16 @@ const OrderSchema = new mongoose.Schema({
       }
     }
   ],
-
   client: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Clients",
-    required: true
   },
-
+  noClient: {
+    type: Boolean,
+    default: false
+  },
   status: { type: String, required: true },
-  paid: { type: Boolean, default: false },
   total: { type: Number, default: 0 },
-  orderDate: {
-    type: Date,
-    default: Date.now
-  }
 }, { timestamps: true })
 
 export default mongoose.model('Order', OrderSchema)

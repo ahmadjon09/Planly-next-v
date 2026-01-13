@@ -37,7 +37,9 @@ export const ContextProvider = ({ children }) => {
         setOpenX
       }}
     >
-      {children}
+      <>
+        {children}
+      </>
     </ContextData.Provider>
   )
 }

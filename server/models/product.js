@@ -17,56 +17,20 @@ const ProductSchema = new mongoose.Schema(
       enum: ["men", "women", "kids", "unisex"],
       default: "men",
     },
-
+    sizes: {
+      type: String,
+      default: "---"
+    },
     season: {
       type: String,
       enum: ["summer", "winter", "spring", "autumn", "all"],
       default: "all",
     },
-
-    material: { type: String, default: "Unknown" },
-    price: { type: Number, required: true },
-
-    types: [
-      {
-        color: {
-          type: String,
-          required: [true, "Ранг киритилиши шарт"],
-        },
-
-        size: {
-          type: String,
-          required: [true, "Ўлчам киритилиши шарт"],
-        },
-
-        style: {
-          type: String,
-          default: "classic",
-        },
-
-        images: {
-          type: [String],
-          default: [],
-        },
-
-        count: {
-          type: Number,
-          default: 0,
-          min: [0, "Сони манфий бўлиши мумкин эмас"],
-        },
-
-        model: {
-          type: String,
-          required: [true, "Модель номи мажбурий"],
-        },
-      }
-    ],
-
-    description: { type: String, default: "empty" },
-    mainImages: [String],
-
-    isAvailable: { type: Boolean, default: true },
     sold: { type: Number, default: 0 },
+    count: { type: Number, default: 0 },
+    material: { type: String, default: "Unknown" },
+    mainImages: [String],
+    isAvailable: { type: Boolean, default: true },
   },
   {
     timestamps: true,
@@ -104,20 +68,7 @@ ProductSchema.pre("findOneAndUpdate", function (next) {
   next();
 });
 
-ProductSchema.methods.toJSON = function () {
-  const obj = this.toObject({ virtuals: true });
 
-  if (obj.types && Array.isArray(obj.types)) {
-    obj.types = obj.types.map(t => ({
-      ...t,
-      qrCode: t.model
-        ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${t.model}`
-        : null
-    }));
-  }
-
-  return obj;
-};
 
 ProductSchema.virtual("qrCode").get(function () {
   if (!this.sku) return null;

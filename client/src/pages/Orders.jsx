@@ -52,25 +52,12 @@ export const Orders = () => {
   const [clientLimit] = useState(20)
   const [orderLimit] = useState(10)
 
-  // Build API endpoints with pagination va real-time updates
-  const buildOrdersEndpoint = useCallback(() => {
-    const params = new URLSearchParams()
-    params.append('_t', lastUpdate)
-    return `/orders?${params.toString()}`
-  }, [lastUpdate])
-
-  // SWR hooks - faqat orders uchun
   const {
     data: ordersData,
     error: ordersError,
     isLoading: ordersLoading,
     mutate: mutateOrders
-  } = useSWR(buildOrdersEndpoint(), Fetch, {
-    revalidateOnFocus: false,
-    keepPreviousData: true,
-    refreshInterval: 10000, // Har 10 soniyada yangilash
-    dedupingInterval: 5000
-  })
+  } = useSWR("/orders", Fetch)
 
   // Extract data - orders ni olish
   const allOrders = ordersData?.data?.data || []
@@ -115,7 +102,7 @@ export const Orders = () => {
   const filteredClients = useMemo(() => {
     return clients.filter(client => {
       const phoneMatch = !searchPhone || client.phoneNumber?.toLowerCase().includes(searchPhone.toLowerCase())
-      const nameMatch = !searchName || client.name?.toLowerCase().includes(searchName.toLowerCase())
+      const nameMatch = !searchName || client.fullName?.toLowerCase().includes(searchName.toLowerCase())
       return phoneMatch && nameMatch
     })
   }, [clients, searchPhone, searchName])
@@ -185,7 +172,7 @@ export const Orders = () => {
 
   // O'chirish funksiyasi
   const handleDelete = async id => {
-    const confirmMessage = `⚠️ Сиз ростдан ҳам буюртмасини бекор қилмоқчимисиз?\n\nБу амални кейин тиклаб бўлмайди!`
+    const confirmMessage = `⚠️ Сиз ростдан ҳам чиқимсини бекор қилмоқчимисиз?\n\nБу амални кейин тиклаб бўлмайди!`
     const confirmed = window.confirm(confirmMessage)
     if (!confirmed) return
 
@@ -206,7 +193,7 @@ export const Orders = () => {
 
     } catch (err) {
       console.error('Cancel error:', err)
-      alert('❌ Буюртмани бекор қилишда хатолик юз берди.')
+      alert('❌ чиқимни бекор қилишда хатолик юз берди.')
     } finally {
       setDeleting(null)
     }
@@ -233,7 +220,7 @@ export const Orders = () => {
       // Mutate data
       mutateOrders()
 
-      alert('✅ Мижоз ва унинг барча буюртмалари ўчирилди')
+      alert('✅ Мижоз ва унинг барча чиқимлари ўчирилди')
     } catch (err) {
       console.error('Delete client error:', err)
       alert('❌ Мижозни ўчиришда хатолик юз берди.')
@@ -242,51 +229,7 @@ export const Orders = () => {
     }
   }
 
-  // Barcha mahsulot narxlarini yangilash
-  const handleBulkPriceUpdate = async () => {
-    if (!selectedOrder) return
 
-    setHideButton(true)
-    try {
-      // Calculate total
-      const total = selectedOrder.products.reduce((sum, product) => {
-        return sum + ((product.price || 0) * (product.amount || 0))
-      }, 0)
-
-      await Fetch.put(`/orders/${selectedOrder._id}`, {
-        products: selectedOrder.products.map(p => ({
-          product: p.product?._id || p.product,
-          amount: p.amount,
-          price: p.price,
-          unit: p.unit
-        })),
-        total: total
-      })
-
-      // Optimistic update
-      if (selectedClient) {
-        setSelectedClient(prev => ({
-          ...prev,
-          orders: prev.orders.map(order =>
-            order._id === selectedOrder._id
-              ? { ...order, total }
-              : order
-          )
-        }))
-      }
-
-      // Mutate data
-      mutateOrders()
-
-      alert('✅ Барча маҳсулот нархлари муваффақиятли янгиланди')
-      setSelectedOrder(null)
-    } catch (err) {
-      console.error('Bulk update error:', err)
-      alert('❌ Нархларни янгилашда хатолик юз берди')
-    } finally {
-      setHideButton(false)
-    }
-  }
 
   // Xato holati
   if (ordersError) {
@@ -302,7 +245,7 @@ export const Orders = () => {
             Юклашда хатолик
           </h3>
           <p className='text-red-600'>
-            Буюртмалар маълумотларини юклашда хатолик юз берди. Илтимос, қайта уриниб кўринг.
+            чиқимлар маълумотларини юклашда хатолик юз берди. Илтимос, қайта уриниб кўринг.
           </p>
         </motion.div>
       </div>
@@ -340,11 +283,11 @@ export const Orders = () => {
               )}
               <div>
                 <h1 className='text-2xl md:text-3xl font-bold text-gray-800'>
-                  {selectedClient ? `${selectedClient.name} буюртмалари` : 'Буюртмалар'}
+                  {selectedClient ? `${selectedClient.fullName} чиқимлари` : 'Мижозлар'}
                 </h1>
                 <p className='text-gray-600 mt-1'>
                   {selectedClient
-                    ? `${clientOrdersPagination.pagination.total} та буюртма топилди`
+                    ? `${clientOrdersPagination.pagination.total} та чиқим топилди`
                     : `${clients.length} та мижоз топилди`}
                 </p>
               </div>
@@ -356,7 +299,7 @@ export const Orders = () => {
                 className='flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold'
               >
                 <Plus size={20} />
-                Янги буюртма
+                Янги чиқим
               </Link>
             </div>
           </div>
@@ -416,7 +359,7 @@ export const Orders = () => {
                 </h3>
                 <p className='text-gray-600 mb-6'>
                   {clients.length === 0
-                    ? 'Ҳали ҳеч қандай буюртма мавжуд эмас'
+                    ? 'Ҳали ҳеч қандай чиқим мавжуд эмас'
                     : 'Қидирув шартларингизга мос келувчи мижозлар мавжуд эмас'
                   }
                 </p>
@@ -462,7 +405,7 @@ export const Orders = () => {
                                 ><Trash2 /></button>
                               </div>}
                             <div>
-                              <h3 className='font-bold text-lg text-gray-800'>{client.name || 'Номаълум'}</h3>
+                              <h3 className='font-bold text-lg text-gray-800'>{client.fullName || 'Номаълум'}</h3>
                               <p className='text-sm text-gray-600'>{client.phoneNumber}</p>
                             </div>
                           </div>
@@ -471,7 +414,7 @@ export const Orders = () => {
                               <Package size={18} />
                               <span>{stats.totalOrders}</span>
                             </div>
-                            <div className='text-xs text-gray-600'>буюртма</div>
+                            <div className='text-xs text-gray-600'>чиқим</div>
                           </div>
                         </div>
 
@@ -485,12 +428,6 @@ export const Orders = () => {
                             <span className='text-sm text-gray-600'>Жами сумма:</span>
                             <span className='font-bold text-green-600'>{stats.totalAmount.toLocaleString()} сўм</span>
                           </div>
-                          {stats.unpaidOrders > 0 && (
-                            <div className='flex justify-between items-center'>
-                              <span className='text-sm text-gray-600'>Тўланмаган:</span>
-                              <span className='font-bold text-red-600'>{stats.unpaidOrders} та</span>
-                            </div>
-                          )}
                         </div>
                       </motion.div>
                     )
@@ -600,7 +537,7 @@ export const Orders = () => {
                       <User className='text-white' size={24} />
                     </div>
                     <div>
-                      <h2 className='text-xl font-bold text-gray-800'>{selectedClient.name}</h2>
+                      <h2 className='text-xl font-bold text-gray-800'>{selectedClient.fullName || 'Номаълум'}</h2>
                       <p className='text-gray-600'>{selectedClient.phoneNumber}</p>
                     </div>
                   </div>
@@ -632,16 +569,12 @@ export const Orders = () => {
                 </h3>
                 <div className='space-y-3'>
                   <div className='flex justify-between items-center'>
-                    <span className='text-gray-600'>Жами буюртма:</span>
+                    <span className='text-gray-600'>Жами чиқим:</span>
                     <span className='font-bold text-blue-600'>{clientOrdersPagination.pagination.total} та</span>
                   </div>
                   <div className='flex justify-between items-center'>
                     <span className='text-gray-600'>Жами сумма:</span>
                     <span className='font-bold text-green-600'>{clientOrdersPagination.orders.reduce((sum, order) => sum + (order.total || 0), 0).toLocaleString()} сўм</span>
-                  </div>
-                  <div className='flex justify-between items-center'>
-                    <span className='text-gray-600'>Тўланмаган:</span>
-                    <span className='font-bold text-red-600'>{clientOrdersPagination.orders.filter(order => !order.paid).length} та</span>
                   </div>
                 </div>
               </div>
@@ -652,10 +585,10 @@ export const Orders = () => {
               <div className='rounded-2xl shadow-lg p-12 text-center border bg-white border-gray-200'>
                 <ScrollText className='mx-auto mb-4 text-gray-400' size={64} />
                 <h3 className='text-xl font-semibold mb-2 text-gray-600'>
-                  Буюртмалар топилмади
+                  чиқимлар топилмади
                 </h3>
                 <p className='text-gray-600'>
-                  Ушбу мижоз учун ҳеч қандай буюртма топилмади.
+                  Ушбу мижоз учун ҳеч қандай чиқим топилмади.
                 </p>
               </div>
             ) : (
@@ -667,7 +600,6 @@ export const Orders = () => {
                         <th className='px-6 py-4 text-left text-sm font-semibold text-gray-700'>Маҳсулотлар</th>
                         <th className='px-6 py-4 text-left text-sm font-semibold text-gray-700'>Ҳолат</th>
                         <th className='px-6 py-4 text-left text-sm font-semibold text-gray-700'>Умумий нарх</th>
-                        <th className='px-6 py-4 text-left text-sm font-semibold text-gray-700'>Тўлов</th>
                         <th className='px-6 py-4 text-left text-sm font-semibold text-gray-700'>Сана</th>
                         <th className='px-6 py-4 text-center text-sm font-semibold text-gray-700'>Амалиёт</th>
                       </tr>
@@ -683,7 +615,6 @@ export const Orders = () => {
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.05 }}
-                            className={`${!order.paid ? "bg-red-300 text-white" : "hover:bg-blue-50"} transition-colors duration-200`}
                           >
                             <td className='px-6 py-4'>
                               <div className='space-y-1'>
@@ -722,16 +653,6 @@ export const Orders = () => {
                                 )}
                               </div>
                             </td>
-
-                            <td className='px-6 py-4'>
-                              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${order.paid
-                                ? 'bg-green-100 text-green-800 border-green-200'
-                                : 'bg-red-100 text-red-800 border-red-200'
-                                }`}>
-                                {order.paid ? 'Тўланган' : 'Тўланмаган'}
-                              </div>
-                            </td>
-
                             <td className='px-6 py-4 text-sm text-gray-600'>
                               {new Date(order.orderDate || order.createdAt).toLocaleDateString()}
                             </td>
@@ -861,7 +782,6 @@ export const Orders = () => {
 const OrderDetailModal = ({
   selectedOrder,
   setSelectedOrder,
-  selectedClient,
   user,
   hideButton,
   setHideButton,
@@ -887,13 +807,13 @@ const OrderDetailModal = ({
 
       // Calculate total
       const total = localOrder.products.reduce((sum, product) => {
-        return sum + ((product.price || 0) * (product.amount || 0))
+        return sum + ((product.price || 0) * (product.quantity || 0))
       }, 0)
 
       await Fetch.put(`/orders/${localOrder._id}`, {
         products: localOrder.products.map(p => ({
           product: p.product?._id || p.product,
-          amount: p.amount,
+          quantity: p.quantity,
           price: p.price,
           unit: p.unit
         })),
@@ -940,7 +860,7 @@ const OrderDetailModal = ({
             <div className='bg-gradient-to-r from-blue-500 to-indigo-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg'>
               <ShoppingCart className='text-white' size={28} />
             </div>
-            <h2 className='text-2xl font-bold text-gray-800'>Буюртма маълумотлари</h2>
+            <h2 className='text-2xl font-bold text-gray-800'>чиқим маълумотлари</h2>
           </div>
 
           {/* Mahsulotlar */}
@@ -974,8 +894,7 @@ const OrderDetailModal = ({
                 <div key={index} className='flex justify-between items-center p-3 rounded-lg border bg-gray-50 border-gray-200'>
                   <div className='flex-1'>
                     <p className='font-medium text-gray-800'>{product.product?.title || ""}</p>
-                    <p className='text-sm text-gray-600'>{product.amount} {product.unit}</p>
-                    {product.unit != "дона" && <p className='text-sm text-gray-600'>{product.count} дона</p>}
+                    <p className='text-sm text-gray-600'>{product.quantity} дона</p>
                   </div>
 
                   {product.editing ? (
@@ -992,7 +911,7 @@ const OrderDetailModal = ({
                   ) : (
                     <div className='text-right'>
                       <p className='font-semibold text-green-600'>
-                        {((product.price || 0) * (product.amount || 0)).toLocaleString()} сўм
+                        {((product.price || 0) * (product.quantity || 0)).toLocaleString()} сўм
                       </p>
                       <p className='text-xs text-gray-600'>
                         {(product.price || 0).toLocaleString()} сўм дан

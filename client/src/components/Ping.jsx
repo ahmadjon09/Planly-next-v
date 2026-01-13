@@ -28,7 +28,7 @@ export const Ping = () => {
 
   useEffect(() => {
     checkConnection()
-    const interval = setInterval(checkConnection, 5000)
+    const interval = setInterval(checkConnection, 10000)
     const handleOnline = () => setIsOffline(false)
     const handleOffline = () => setIsOffline(true)
 

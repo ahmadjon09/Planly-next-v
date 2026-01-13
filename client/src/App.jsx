@@ -13,8 +13,8 @@ import { AuthModals } from './components/AuthModals'
 import { Admins } from './pages/Admins'
 import { Workers } from './pages/Workers'
 import { Orders } from './pages/Orders'
-import QrScanner from './pages/Scann'
 import { AddNewOrder } from './mod/OrderModal'
+import DashboardPage, {  } from './pages/Dashboard'
 
 export default function App() {
   const { setUser, user, netErr } = useContext(ContextData)
@@ -67,15 +67,20 @@ export default function App() {
   const isAdmin = user.role === 'admin'
   const routes = [
     { index: true, element: <ProductsPage /> },
-    { path: 'user/edit/:id', element: <UserManagement /> },
-    { path: 'products', element: <ProductsPage /> },
+
     isAdmin && { path: 'user/:admin', element: <UserManagement /> },
     isAdmin && { path: 'user', element: <UserManagement /> },
-    { path: 'scann', element: <QrScanner /> },
+    isAdmin && { path: 'dashboard', element: <DashboardPage /> },
+
+    { path: 'admin', element: <Admins /> },
+    { path: 'user/edit/:id', element: <UserManagement /> },
+    { path: 'workers', element: <Workers /> },
+
+    { path: 'products', element: <ProductsPage /> },
+
     { path: 'order', element: <Orders /> },
     { path: 'addorder', element: <AddNewOrder /> },
-    { path: 'admin', element: <Admins /> },
-    { path: 'workers', element: <Workers /> },
+
     { path: '*', element: <Err /> }
   ].filter(Boolean)
 

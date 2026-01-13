@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Home, Search, Phone } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-export default function Err () {
+export default function Err() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
 
   useEffect(() => {
@@ -74,7 +74,7 @@ export default function Err () {
             to={'/'}
             className='group relative px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-xl overflow-hidden'
           >
-            <span className='relative z-10'>Home</span>
+            <span className='relative z-10'>Бош саҳифа</span>
             <div className='absolute inset-0 bg-gradient-to-r from-purple-600 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300'></div>
           </Link>
         </div>

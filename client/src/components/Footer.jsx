@@ -75,36 +75,6 @@ export const Footer = () => {
           </b>
         </p>
       </motion.footer>
-
-      <AnimatePresence>
-        {showScrollTop && (
-          <motion.button
-            initial="hidden"
-            animate="visible"
-            exit="hidden"
-            variants={scrollButtonVariants}
-            onClick={scrollToTop}
-            className={`fixed hover:cursor-pointer bottom-6 right-6 z-50 text-white p-3 rounded-full shadow-2xl transition-all duration-300
-              ${dark
-                ? 'bg-gray-700 hover:bg-gray-600'
-                : 'bg-gradient-to-r from-blue-500 to-indigo-500'
-              }
-            `}
-            whileHover={{
-              scale: 1.1,
-              boxShadow: '0 10px 30px rgba(59, 130, 246, 0.5)'
-            }}
-            whileTap={{ scale: 0.9 }}
-          >
-            <motion.div
-              animate={{ y: [0, -2.5, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-            >
-              <ArrowUp size={20} />
-            </motion.div>
-          </motion.button>
-        )}
-      </AnimatePresence>
     </>
   )
 }

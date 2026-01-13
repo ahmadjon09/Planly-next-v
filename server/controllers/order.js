@@ -2,31 +2,24 @@ import Order from '../models/order.js'
 import Product from '../models/product.js'
 import Client from "../models/client.js"
 import { sendErrorResponse } from '../middlewares/sendErrorResponse.js'
-import { recordProductSale, revertProductSale } from './stats.js'
+import mongoose from 'mongoose';
 
 export const AllOrders = async (_, res) => {
   try {
     const orders = await Order.find()
       .sort({ createdAt: -1 })
       .populate('customer', 'firstName lastName')
-      .populate('client', 'name phoneNumber')
+      .populate('client', 'fullName phoneNumber')
       .populate('products.product', 'title mainImages price');
 
     const enrichedOrders = orders.map(order => {
       const enrichedProducts = order.products.map(item => {
         const product = item.product;
-        const variant = product?.types?.[item.variantIndex] || {};
 
         return {
           ...item.toObject(),
           productName: product?.title || 'Deleted product',
-          productImages: product?.mainImages || [],
-          variantDetails: {
-            color: variant.color || item.variant?.color,
-            size: variant.size || item.variant?.size,
-            style: variant.style || item.variant?.style,
-            count: variant.count || 0
-          }
+          productImages: product?.mainImages || []
         };
       });
 
@@ -43,261 +36,163 @@ export const AllOrders = async (_, res) => {
   }
 };
 
-
-const sendOrderNotification = async (order) => {
-  try {
-    const loggedUsers = await User.find({ isLoggedIn: true }).lean();
-    if (!loggedUsers.length) return;
-    if (!order.products || !order.products.length) return;
-
-    // Product IDларни йиғиб, уларни базадан олиш
-    const productIds = order.products.map(p => p.product);
-    const productsMap = {};
-    const productsFromDB = await Product.find({ _id: { $in: productIds } }).lean();
-    productsFromDB.forEach(p => { productsMap[p._id.toString()] = p; });
-
-    // Client ma'lumotini olish
-    let clientInfo = null;
-    if (order.client) {
-      clientInfo = await Client.findById(order.client).lean();
-    }
-
-    for (const user of loggedUsers) {
-      if (!user.telegramId) continue;
-
-      // Header
-      let message = `╔═══════════════════╗\n`;
-      message += `  📝 ЯНГИ БУЮРТМА          \n`;
-      message += `╚═══════════════════╝\n\n`;
-
-      // Client haqida
-      if (clientInfo) {
-        message += `👤 Мижоз: <b>${clientInfo.name || "Noma'lum"}</b>\n`;
-        if (clientInfo.phoneNumber) {
-          message += `📞 Телефон: <b>${clientInfo.phoneNumber}</b>\n`;
-        }
-        message += `\n`;
-      }
-
-      // Mahsulotlar ro'yxati
-      order.products.forEach((p, idx) => {
-        const productData = productsMap[p.product.toString()];
-        const title = productData?.title || "Noma'lum mahsulot";
-        const priceCurrency = productData?.priceType === 'uz' ? 'сўм' : '$';
-
-        message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
-        message += `   ├─ 📦 Миқдор: ${p.amount} ${p.unit || productData?.unit || ''}\n`;
-        message += `   ├─ 🔢 Дона: ${p.count || 0}\n`;
-        message += `   └─ 💰 Нархи: <b>Нарх белгиланмаган</b>\n\n`;
-      });
-
-      // Footer
-      message += `📊 <i>Умумий маҳсулотлар: ${order.products.length} та</i>`;
-      message += `\n🕒 ${new Date().toLocaleString('uz-UZ')}`;
-
-      await bot.telegram.sendMessage(
-        user.telegramId,
-        message,
-        {
-          parse_mode: "HTML",
-          disable_web_page_preview: true
-        }
-      );
-    }
-
-  } catch (err) {
-    console.error("Bot хабар юборишда хатолик:", err.message);
-  }
-};
-
-
 export const NewOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    let { customer, client, clientId, products, status } = req.body;
+    const { customer, client, clientId, products, status } = req.body;
 
     if (!customer) {
-      return sendErrorResponse(res, 400, "Мижоз (customer) маълумоти йўқ!");
+      return sendErrorResponse(res, 400, "Мижоз маълумоти йўқ!");
     }
 
-    if (!products || !products.length) {
-      return sendErrorResponse(res, 400, "Буюртмада маҳсулотлар йўқ!");
+    if (!Array.isArray(products) || products.length === 0) {
+      return sendErrorResponse(res, 400, "Маҳсулот йўқ!");
     }
 
+    /* ========== CLIENT ========== */
     let clientToUse = null;
+    let noClient = false;
 
-    // 🔹 Client yaratish yoki mavjud clientni ishlatish
     if (clientId) {
-      // Mavjud client ID kelsa
       const existingClient = await Client.findById(clientId);
       if (!existingClient) {
-        return sendErrorResponse(res, 404, "Берилган ID бўйича мижоз топилмади!");
+        return sendErrorResponse(res, 404, "Мижоз топилмади!");
       }
-      clientToUse = clientId;
+      clientToUse = existingClient._id;
     } else if (client) {
-      // Yangi client ma'lumotlari kelsa
-      if (!client.phoneNumber || !client.name) {
-        return sendErrorResponse(res, 400, "Янги мижоз учун телефон ва исм мажбурий!");
+      let found = await Client.findOne({ phoneNumber: client.phoneNumber });
+      if (!found) {
+        found = await Client.create(client);
+      }
+      clientToUse = found._id;
+    } else {
+      noClient = true;
+    }
+
+    /* ========== PRODUCTS ========== */
+    const productIds = products.map(p => p.product);
+
+    const dbProducts = await Product.find({
+      _id: { $in: productIds }
+    }).session(session);
+
+    if (dbProducts.length !== products.length) {
+      throw new Error("Айрим маҳсулотлар топилмади");
+    }
+
+    const productMap = new Map();
+    dbProducts.forEach(p => productMap.set(String(p._id), p));
+
+    const bulkOps = [];
+    const updatedProducts = [];
+
+    for (const item of products) {
+      const product = productMap.get(String(item.product));
+
+      const quantity = Number(item.quantity);
+      const price = Number(item.price ?? product.price);
+
+      if (product.count < quantity) {
+        throw new Error(`"${product.title}" учун етарли миқдор йўқ`);
       }
 
-      // Telefon raqami bilan mavjud clientni tekshirish
-      const existingClientByPhone = await Client.findOne({
-        phoneNumber: client.phoneNumber
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: product._id },
+          update: {
+            $inc: {
+              count: -quantity,
+              sold: quantity // 🔥 SOLD OSHADI
+            }
+          }
+        }
       });
 
-      if (existingClientByPhone) {
-        // Mavjud client bor, o'shanini ishlatamiz
-        clientToUse = existingClientByPhone._id;
-      } else {
-        // Yangi client yaratamiz
-        const newClient = await Client.create({
-          name: client.name,
-          phoneNumber: client.phoneNumber
-        });
-        clientToUse = newClient._id;
-      }
-    }
-    // 🔹 client ham, clientId ham bo'lmasa, clientToUse null bo'ladi
-
-    // 🔹 Product va variantlarni tekshirish
-    for (const item of products) {
-      const product = await Product.findById(item.product);
-      if (!product) {
-        return sendErrorResponse(res, 404, `"${item.product}" ID ли маҳсулот топилмади!`);
-      }
-
-      // 🔹 Variantni tekshirish (color, size, style)
-      const variant = product.types.find(t =>
-        t.color === item.variant.color &&
-        t.size === item.variant.size &&
-        t.style === item.variant.style
-      );
-
-      if (!variant) {
-        return sendErrorResponse(res, 404,
-          `"${product.title}" учун ${item.variant.color} рангли, ${item.variant.size} ўлчовли варинт топилмади!`);
-      }
-
-      // 🔹 Countni tekshirish
-      if (variant.count < item.quantity) {
-        return sendErrorResponse(res, 400,
-          `"${product.title}" (${item.variant.color}/${item.variant.size}) учун етарли миқдор йўқ! Мавжуд: ${variant.count}, Соранаётган: ${item.quantity}`);
-      }
+      updatedProducts.push({
+        product: product._id,
+        quantity,
+        price
+      });
     }
 
-    // 🔹 Stock (count) larni kamaytirish va tarix yozish
-    const updatedProducts = [];
-    for (const item of products) {
-      const product = await Product.findById(item.product);
-      const variantIndex = product.types.findIndex(t =>
-        t.color === item.variant.color &&
-        t.size === item.variant.size &&
-        t.style === item.variant.style
-      );
+    // 🔥 BITTA ZARBADA UPDATE
+    await Product.bulkWrite(bulkOps, { session });
 
-      if (variantIndex !== -1) {
-        // 🔹 Countni kamaytirish
-        product.types[variantIndex].count -= item.quantity;
+    const total = updatedProducts.reduce(
+      (sum, p) => sum + p.price * p.quantity,
+      0
+    );
 
-        // 🔹 Sold ni oshirish
-        product.sold += item.quantity;
-
-        await product.save();
-
-        // 🔹 Tarixga yozish
-        await recordProductSale(
-          item.product,
-          item.variant,
-          item.quantity
-        );
-
-        // 🔹 Order uchun product ma'lumotlarini tayyorlash
-        updatedProducts.push({
-          product: item.product,
-          variantIndex: variantIndex,
-          variant: item.variant,
-          quantity: item.quantity,
-          price: item.price || product.price
-        });
-      }
-    }
-
-    // 🔹 Yangi buyurtma yaratish
-    const newOrder = new Order({
+    const newOrder = await Order.create([{
       customer,
-      client: clientToUse,  // 🔹 Yaratilgan yoki mavjud client ID
+      client: clientToUse,
+      noClient,
       products: updatedProducts,
-      total: updatedProducts.reduce((sum, p) => sum + (p.price * p.quantity), 0),
+      total,
       paid: false,
-      status: status || "pending",
+      status,
       orderDate: new Date()
-    });
+    }], { session });
 
-    await newOrder.save();
-
-    // 🔹 Client ma'lumotlarini populate qilish
-    const populatedOrder = await Order.findById(newOrder._id)
-      .populate('client', 'name phoneNumber')
-      .populate('customer', 'firstName lastName')
-      .populate('products.product', 'title mainImages price');
+    await session.commitTransaction();
+    session.endSession();
 
     return res.status(201).json({
-      message: "Буюртма муваффақиятли яратилди ✅",
-      data: populatedOrder
+      message: "Буюртма яратилди ✅",
+      data: newOrder[0]
     });
 
-  } catch (error) {
-    console.error("❌ Буюртма яратишда хатолик:", error);
-    sendErrorResponse(res, 500, "Сервер хатолиги!");
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error(err);
+    return sendErrorResponse(res, 500, err.message);
   }
 };
 
+
+
 export const CancelOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const { id } = req.params
-
-    const order = await Order.findById(id)
+    const order = await Order.findById(req.params.id).session(session);
     if (!order) {
-      return sendErrorResponse(res, 404, "Буюртма топилмади!")
+      return sendErrorResponse(res, 404, "Буюртма топилмади!");
     }
 
-    if (order.paid) {
-      return sendErrorResponse(res, 400, "Тўлов қилинган буюртмани бекор қилиш мумкин эмас!")
-    }
-
-    // 🔹 Stock (count) larni qaytarish va tarixni tuzatish
-    for (const item of order.products) {
-      const product = await Product.findById(item.product);
-      if (product && product.types[item.variantIndex]) {
-        // 🔹 Countni qaytarish
-        product.types[item.variantIndex].count += item.quantity;
-
-        // 🔹 Sold ni kamaytirish
-        product.sold = Math.max(0, product.sold - item.quantity);
-
-        await product.save();
-
-        // 🔹 Tarixni tuzatish
-        await revertProductSale(
-          item.product,
-          item.variant,
-          item.quantity
-        );
+    const bulkOps = order.products.map(item => ({
+      updateOne: {
+        filter: { _id: item.product },
+        update: {
+          $inc: {
+            count: item.quantity,
+            sold: -item.quantity
+          }
+        }
       }
-    }
+    }));
 
-    // 🔹 Status'ni cancelled qilish
-    order.status = "cancelled";
-    await order.save();
+    await Product.bulkWrite(bulkOps, { session });
+    await Order.findByIdAndDelete(order._id).session(session);
 
-    return res.status(200).json({
-      data: order,
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.json({
       message: "Буюртма бекор қилинди ❌"
-    })
-  } catch (error) {
-    console.error("❌ Буюртма бекор қилишда хатолик:", error)
-    sendErrorResponse(res, 500, "Сервер хатолиги!")
+    });
+
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error(err);
+    return sendErrorResponse(res, 500, "Сервер хатолиги");
   }
-}
+};
 
 
 
@@ -375,5 +270,3 @@ export const UpdateOrder = async (req, res) => {
     sendErrorResponse(res, 500, "Сервер хатолиги!");
   }
 };
-
-

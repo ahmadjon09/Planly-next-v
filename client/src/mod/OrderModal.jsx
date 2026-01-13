@@ -28,7 +28,8 @@ import {
   Box,
   Upload,
   ImageIcon,
-  FileImage
+  Edit2,
+  UserPlus
 } from 'lucide-react'
 import jsQR from 'jsqr'
 import Fetch from '../middlewares/fetcher'
@@ -36,6 +37,7 @@ import { ContextData } from '../contextData/Context'
 import { mutate } from 'swr'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
+import { scanned } from '../assets/js/saund'
 
 export const AddNewOrder = () => {
   const { user } = useContext(ContextData)
@@ -52,22 +54,23 @@ export const AddNewOrder = () => {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState(null)
   const [showClientsList, setShowClientsList] = useState(false)
+  const [isEditingClient, setIsEditingClient] = useState(false)
 
-  // Scanner states - yangi o'zgarishlar
+  // Scanner states
   const [showScanner, setShowScanner] = useState(false)
   const [scanning, setScanning] = useState(false)
-  const [scannerResult, setScannerResult] = useState('')
-  const [scannerError, setScannerError] = useState('')
-  const [isScanning, setIsScanning] = useState(false)
-  const [scannerFullscreen, setScannerFullscreen] = useState(false)
-  const [cameraActive, setCameraActive] = useState(false)
-  const [scanningFor, setScanningFor] = useState('product') // yangi: product yoki model
+  const [scanResult, setScanResult] = useState('')
+  const [scanError, setScanError] = useState('')
+  const [cameraFullscreen, setCameraFullscreen] = useState(false)
+  const [scannedProducts, setScannedProducts] = useState(new Set())
+  const [isProcessingScan, setIsProcessingScan] = useState(false)
 
   // Refs
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const rafRef = useRef(null)
   const scannerContainerRef = useRef(null)
+  const fileInputRef = useRef(null)
   const lastScannedRef = useRef(null)
 
   // Client data
@@ -78,7 +81,7 @@ export const AddNewOrder = () => {
     address: ''
   })
 
-  // Fetch all orders for clients extraction
+  // ✅ Fetch all orders for clients extraction
   const fetchAllOrders = useCallback(async () => {
     setOrdersLoading(true)
     try {
@@ -92,7 +95,7 @@ export const AddNewOrder = () => {
     }
   }, [])
 
-  // Extract clients from orders
+  // ✅ Extract clients from orders
   const clients = useMemo(() => {
     if (!allOrders.length) return []
 
@@ -104,221 +107,219 @@ export const AddNewOrder = () => {
           clientsMap[clientId] = {
             ...order.client,
             _id: clientId,
-            orders: []
+            orders: [],
+            totalOrders: 0,
+            totalSpent: 0
           }
         }
         clientsMap[clientId].orders.push(order)
+        clientsMap[clientId].totalOrders += 1
+        clientsMap[clientId].totalSpent += (order.totalPrice || 0)
       }
     })
-    return Object.values(clientsMap)
+    return Object.values(clientsMap).sort((a, b) =>
+      b.totalOrders - a.totalOrders
+    )
   }, [allOrders])
 
-  // Filtered clients
+  // ✅ Filtered clients
   const filteredClients = useMemo(() => {
+    if (!clientSearchQuery.trim()) return clients.slice(0, 10)
+    const query = clientSearchQuery.toLowerCase().trim()
     return clients.filter(client => {
-      const phoneMatch = !clientSearchQuery ||
-        client.phoneNumber?.toLowerCase().includes(clientSearchQuery.toLowerCase())
-      const nameMatch = !clientSearchQuery ||
-        client.name?.toLowerCase().includes(clientSearchQuery.toLowerCase())
-      return phoneMatch || nameMatch
-    })
+      return (
+        client.phoneNumber?.toLowerCase().includes(query) ||
+        client.name?.toLowerCase().includes(query) ||
+        client.address?.toLowerCase().includes(query)
+      )
+    }).slice(0, 20)
   }, [clients, clientSearchQuery])
 
-  // ✅ YANGI: Scannerni boshlash funksiyasi (AddProduct dan)
-  const startScan = useCallback(async () => {
+  const handleScannerSearch = useCallback(async (modelId) => {
+    if (!modelId.trim() || scannedProducts.has(modelId) || isProcessingScan) return
+    setIsProcessingScan(true);
+    setScanError('');
+    setScannedProducts(prev => new Set([...prev, modelId]));
     try {
-      setScannerError('')
-      setScannerResult('')
-      stopScan() // Avvalgi streamlarni tozalash
+      const { data } = await Fetch.get(`/products/qr/scann/${modelId.trim()}`)
+      if (data?.product) {
+        const productTypeData = data.product
+        const existingIndex = selectedProducts.findIndex(
+          p => p.productId === productTypeData._id && p.model === productTypeData.model
+        )
+        if (existingIndex !== -1) {
+          setSelectedProducts(prev => {
+            const updated = [...prev]
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              quantity: updated[existingIndex].quantity + 1
+            }
+            return updated
+          })
+
+          setMessage({
+            type: 'success',
+            text: `✅ ${productTypeData.title} миқдори ортди (ҳозир: ${selectedProducts[existingIndex].quantity + 1})`
+          })
+        } else {
+          const newProduct = {
+            _id: `${Date.now()}-${productTypeData._id}-${productTypeData.model}`,
+            productId: productTypeData._id,
+            title: productTypeData.title,
+            category: productTypeData.category,
+            model: productTypeData.model,
+            color: productTypeData.color || '--',
+            size: productTypeData.size || '--',
+            style: productTypeData.style || '--',
+            price: productTypeData.price || 0,
+            quantity: 1,
+            count: productTypeData.count || 0,
+            images: productTypeData.images || [],
+            unit: productTypeData.unit || 'дона'
+          }
+
+          setSelectedProducts(prev => [...prev, newProduct])
+          setMessage({
+            type: 'success',
+            text: `✅ ${productTypeData.title} қўшилди (${productTypeData.model})`
+          })
+        }
+
+        setTimeout(() => {
+          setShowScanner(false);
+          stopScan();
+        }, 1000);
+
+      } else {
+        throw new Error('Махсулот маълумотлари топилмади')
+      }
+    } catch (err) {
+      console.error('❌ Сканнер хатолик:', err.response?.data || err);
+      setScanError(err.response?.data?.message || 'Модель ID си бўйича махсулот топилмади')
+      setMessage({
+        type: 'error',
+        text: `❌ ${modelId} кодли маҳсулот топилмади`
+      })
+    } finally {
+      setIsProcessingScan(false);
+      setTimeout(() => {
+        setScannedProducts(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(modelId)
+          return newSet
+        })
+      }, 2000);
+    }
+  }, [selectedProducts, scannedProducts, isProcessingScan])
+
+  const startScan = async () => {
+    try {
+      setScanError('')
+      setScanResult('')
+      setCameraFullscreen(false)
+      stopScan() // Oldingi streamlarni tozalash
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "environment",
           width: { ideal: 1920 },
           height: { ideal: 1080 }
-        }
+        },
       })
 
-      videoRef.current.srcObject = stream
-      videoRef.current.setAttribute('playsinline', true)
-
-      videoRef.current.onloadedmetadata = async () => {
-        try {
-          await videoRef.current.play()
-          setCameraActive(true)
-          setScanning(true)
-          scanLoop()
-        } catch (playError) {
-          console.error("Video play error:", playError)
-          setScannerError("Камера видеоси ишлатилмади")
-          stopScan()
-        }
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.setAttribute('playsinline', true)
+        await videoRef.current.play()
+        setScanning(true)
       }
     } catch (err) {
-      console.error('Camera access error:', err)
-      let errorMessage = 'Камера очилмади'
-
-      if (err.name === 'NotAllowedError') {
-        errorMessage = 'Камерага рухсат берилмаган. Илтимос, браузер созламларида рухсат беринг.'
-      } else if (err.name === 'NotFoundError') {
-        errorMessage = 'Камера топилмади'
-      }
-
-      setScannerError(errorMessage)
+      console.error('Camera error:', err)
+      setScanError('Камера очилмади. Илтимос, рухсат беринг.')
     }
-  }, [])
-
-  // ✅ YANGI: Scan loop funksiyasi (AddProduct dan)
-  const scanLoop = () => {
-    if (!videoRef.current || !canvasRef.current || !scanning) return
-
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      rafRef.current = requestAnimationFrame(scanLoop)
-      return
-    }
-
-    // Canvas o'lchamlarini o'rnatish
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-    try {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      const code = jsQR(imageData.data, canvas.width, canvas.height)
-
-      if (code?.data) {
-        const scannedData = code.data
-        setScannerResult(scannedData)
-
-        // Agar bir xil kod qayta skanerlangan bo'lsa, e'tibor bermaslik
-        if (scannedData !== lastScannedRef.current) {
-          lastScannedRef.current = scannedData
-          handleScannerSearch(scannedData)
-
-          // Qisqa kutish va keyin scanning holatini o'chirish
-          setTimeout(() => {
-            setIsScanning(false)
-            lastScannedRef.current = null
-          }, 1000)
-        }
-        return
-      }
-    } catch (err) {
-      console.error('QR scanning error:', err)
-    }
-
-    rafRef.current = requestAnimationFrame(scanLoop)
   }
 
-  // ✅ YANGI: Scanner to'xtatish funksiyasi (AddProduct dan)
   const stopScan = () => {
     setScanning(false)
-    setCameraActive(false)
-    setIsScanning(false)
-    setScannerError('')
-    setScannerResult('')
-
-    // requestAnimationFrame ni to'xtatish
+    if (videoRef.current?.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(t => {
+        t.stop()
+      })
+      videoRef.current.srcObject = null
+    }
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = null
     }
-
-    // Video streamni to'xtatish
-    if (videoRef.current?.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks()
-      tracks.forEach(track => track.stop())
-      videoRef.current.srcObject = null
-    }
   }
 
-  // ✅ YANGI: Scanner qidiruvi
-  const handleScannerSearch = useCallback(async (modelId) => {
-    if (!modelId.trim() || isScanning) return
+  // Scan loop - YANGILANDI
+  useEffect(() => {
+    if (!scanning || !showScanner) return;
 
-    setScannerError('')
-    setIsScanning(true)
+    const scanSound = new Audio(`data:audio/wav;base64,${scanned}`)
+    let lastScanTime = 0;
+    const SCAN_COOLDOWN = 2000; // 2 секунд
 
-    try {
-      const response = await Fetch.get(`/products/qr/model/${modelId.trim()}`)
+    const scanFrame = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
 
-      if (response.data?.data) {
-        const productTypeData = response.data.data
-        const productInfo = response.data.productInfo
-
-        // Mahsulot allaqachon tanlanganligini tekshirish
-        const existingProduct = selectedProducts.find(
-          (p) =>
-            p.productId === productInfo._id &&
-            p.model === productTypeData.model
-        )
-
-        if (existingProduct) {
-          setSelectedProducts((prev) =>
-            prev.map((p) =>
-              p.productId === productInfo._id &&
-                p.model === productTypeData.model
-                ? { ...p, quantity: p.quantity + 1 }
-                : p
-            )
-          )
-          setMessage({
-            type: 'success',
-            text: `Махсулот миқдори ортди: ${existingProduct.title}`
-          })
-        } else {
-          const newProduct = {
-            _id: `${productInfo._id}-${productTypeData.model}`,
-            productId: productInfo._id,
-            title: productInfo.title,
-            category: productInfo.category,
-            model: productTypeData.model,
-            color: productTypeData.color,
-            size: productTypeData.size,
-            style: productTypeData.style,
-            price: 0,
-            quantity: 1,
-            count: productTypeData.count || 0,
-            images: productTypeData.images || [],
-            unit: 'дона'
-          }
-
-          setSelectedProducts((prev) => [...prev, newProduct])
-          setMessage({
-            type: 'success',
-            text: `Махсулот қўшилди: ${productInfo.title}`
-          })
-        }
-
-        setScannerResult('')
+      if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+        rafRef.current = requestAnimationFrame(scanFrame);
+        return;
       }
-    } catch (err) {
-      console.error('❌ Сканнер хатолик:', err)
-      setScannerError('Модель ID си бўйича махсулот топилмади')
-      setMessage({ type: 'error', text: 'Махсулот топилмади!' })
-      setIsScanning(false)
-      lastScannedRef.current = null
-    }
-  }, [selectedProducts, isScanning])
 
-  // ✅ YANGI: Manual scanner input
-  const handleManualScanner = (e) => {
-    e.preventDefault()
-    if (scannerResult.trim() && !isScanning) {
-      handleScannerSearch(scannerResult)
-    }
-  }
+      const ctx = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // ✅ YANGI: Fullscreen toggle (AddProduct dan)
-  const toggleScannerFullscreen = () => {
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, canvas.width, canvas.height);
+
+        if (code?.data) {
+          const scannedData = code.data.trim();
+          const now = Date.now();
+
+          // Cooldown check
+          if (scannedData !== lastScannedRef.current && now - lastScanTime > SCAN_COOLDOWN) {
+            lastScannedRef.current = scannedData;
+            lastScanTime = now;
+            setScanResult(scannedData);
+            stopScan()
+            setShowScanner(false)
+            scanSound.volume = 1;
+            scanSound.play().catch(() => { });
+
+            // Маҳсулотни қидириш
+            handleScannerSearch(scannedData);
+          }
+        }
+      } catch (err) {
+        console.error('QR scanning error:', err);
+      }
+
+      if (scanning) {
+        rafRef.current = requestAnimationFrame(scanFrame);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(scanFrame);
+
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, [scanning, showScanner, handleScannerSearch]);
+
+  // Camera to'liq ekran rejimi
+  const toggleCameraFullscreen = () => {
     if (!scannerContainerRef.current) return
 
-    if (!scannerFullscreen) {
+    if (!cameraFullscreen) {
       if (scannerContainerRef.current.requestFullscreen) {
         scannerContainerRef.current.requestFullscreen()
       } else if (scannerContainerRef.current.webkitRequestFullscreen) {
@@ -335,13 +336,12 @@ export const AddNewOrder = () => {
         document.mozCancelFullScreen()
       }
     }
-    setScannerFullscreen(!scannerFullscreen)
+    setCameraFullscreen(!cameraFullscreen)
   }
 
-  // ✅ YANGI: Fullscreen change event (AddProduct dan)
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setScannerFullscreen(
+      setCameraFullscreen(
         !!document.fullscreenElement ||
         !!document.webkitFullscreenElement ||
         !!document.mozFullScreenElement
@@ -359,26 +359,89 @@ export const AddNewOrder = () => {
     }
   }, [])
 
-  // Client functions...
-  const handleSelectClient = client => {
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      stopScan()
+    }
+  }, [])
+
+
+
+  // ✅ Handle manual scanner input
+  const handleManualScanner = useCallback((e) => {
+    e.preventDefault()
+    const code = scanResult.trim()
+    if (code && !isProcessingScan) {
+      handleScannerSearch(code)
+      setScanResult('')
+    }
+  }, [scanResult, handleScannerSearch, isProcessingScan])
+
+  // ✅ Handle image upload for QR scanning
+  const handleImageUpload = useCallback((e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        canvas.width = img.width
+        canvas.height = img.height
+        ctx.drawImage(img, 0, 0)
+
+        try {
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+          const code = jsQR(imageData.data, canvas.width, canvas.height)
+
+          if (code?.data) {
+            setScanResult(code.data)
+            handleScannerSearch(code.data)
+          } else {
+            setMessage({
+              type: 'error',
+              text: 'Расмда QR код топилмади'
+            })
+          }
+        } catch (err) {
+          console.error('Image QR scan error:', err)
+          setMessage({
+            type: 'error',
+            text: 'QR кодни ўқишда хатолик'
+          })
+        }
+      }
+      img.src = event.target.result
+    }
+    reader.readAsDataURL(file)
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [handleScannerSearch])
+
+  // ✅ Handle client selection
+  const handleSelectClient = useCallback((client) => {
     setClientData({
       clientId: client._id,
-      name: client.name,
+      name: client.fullName,
       phoneNumber: client.phoneNumber,
       address: client.address || ''
     })
     setShowClientsList(false)
     setClientSearchQuery('')
-  }
+    setIsEditingClient(false)
+    setMessage({
+      type: 'success',
+      text: `✅ Мижоз танланди: ${client.name}`
+    })
+  }, [])
 
-  const handleClientChange = (field, value) => {
-    setClientData(prev => ({
-      ...prev,
-      [field]: value
-    }))
-  }
-
-  const handleClearClient = () => {
+  // ✅ Handle clear client
+  const handleClearClient = useCallback(() => {
     setClientData({
       clientId: '',
       name: '',
@@ -386,10 +449,31 @@ export const AddNewOrder = () => {
       address: ''
     })
     setClientSearchQuery('')
-  }
+    setIsEditingClient(false)
+  }, [])
 
-  // Product functions...
-  const handleQuantityChange = (id, delta) => {
+  // ✅ Handle add new client
+  const handleAddNewClient = useCallback(() => {
+    setIsEditingClient(true)
+    setShowClientsList(false)
+    setClientData({
+      clientId: '',
+      name: '',
+      phoneNumber: '',
+      address: ''
+    })
+  }, [])
+
+  // ✅ Handle client field changes
+  const handleClientChange = useCallback((field, value) => {
+    setClientData(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }, [])
+
+  // ✅ Product quantity change
+  const handleQuantityChange = useCallback((id, delta) => {
     setSelectedProducts(prev =>
       prev.map(p =>
         p._id === id
@@ -400,10 +484,11 @@ export const AddNewOrder = () => {
           : p
       )
     )
-  }
+  }, [])
 
-  const handlePriceChange = (id, price) => {
-    const numPrice = Number(price) || 0
+  // ✅ Product price change
+  const handlePriceChange = useCallback((id, price) => {
+    const numPrice = Number(price.replace(/\D/g, '')) || 0
     setSelectedProducts(prev =>
       prev.map(p =>
         p._id === id
@@ -411,18 +496,10 @@ export const AddNewOrder = () => {
           : p
       )
     )
-  }
+  }, [])
 
-  // Total price calculation
-  useEffect(() => {
-    const total = selectedProducts.reduce(
-      (sum, item) => sum + (item.price || 0) * item.quantity,
-      0
-    )
-    setTotalPrice(total)
-  }, [selectedProducts])
-
-  const handleInputQuantityChange = (id, value) => {
+  // ✅ Product quantity input change
+  const handleInputQuantityChange = useCallback((id, value) => {
     const num = Number(value)
     if (isNaN(num) || num < 1) return
 
@@ -434,16 +511,35 @@ export const AddNewOrder = () => {
         return p
       })
     )
-  }
+  }, [])
 
-  const handleRemoveProduct = (id) => {
+  // ✅ Remove product
+  const handleRemoveProduct = useCallback((id) => {
+    const product = selectedProducts.find(p => p._id === id)
+    if (product) {
+      setScannedProducts(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(product.model)
+        return newSet
+      })
+    }
     setSelectedProducts(prev => prev.filter(p => p._id !== id))
-  }
+  }, [selectedProducts])
 
-  // Submit order
-  const handleSubmit = async e => {
+  // ✅ Calculate total price
+  useEffect(() => {
+    const total = selectedProducts.reduce(
+      (sum, item) => sum + (item.price || 0) * item.quantity,
+      0
+    )
+    setTotalPrice(total)
+  }, [selectedProducts])
+
+  // ✅ Submit order
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
+    // Validation
     if (selectedProducts.length === 0) {
       return setMessage({
         type: 'error',
@@ -451,10 +547,17 @@ export const AddNewOrder = () => {
       })
     }
 
-    if (!clientData.name || !clientData.phoneNumber) {
+    if (!clientData.name.trim()) {
       return setMessage({
         type: 'error',
-        text: 'Мижоз маълумотларини тўлиқ киритинг!'
+        text: 'Мижоз исмини киритинг!'
+      })
+    }
+
+    if (!clientData.phoneNumber.trim()) {
+      return setMessage({
+        type: 'error',
+        text: 'Мижоз телефон рақамини киритинг!'
       })
     }
 
@@ -470,94 +573,105 @@ export const AddNewOrder = () => {
     try {
       const orderData = {
         customer: user._id,
+
         products: selectedProducts.map(p => ({
-          product: p.productId,
+          product: p.productId,              // ✅ backend kutyapti
+          quantity: Number(p.quantity) || 0, // ✅ amount emas
+          price: Number(p.price) || 0,
+
+          // 🔹 ixtiyoriy qo‘shimcha info (order schema’da bo‘lsa)
           model: p.model,
-          amount: p.quantity,
-          count: p.count || 0,
           unit: p.unit,
-          price: p.price,
           variant: {
             color: p.color,
             size: p.size,
             style: p.style
           }
         })),
-        ...(clientData.clientId ? { clientId: clientData.clientId } : {
-          client: {
-            name: clientData.name,
-            phoneNumber: clientData.phoneNumber,
-            address: clientData.address || '--'
+
+        ...(clientData.clientId
+          ? {
+            clientId: clientData.clientId
           }
-        }),
+          : {
+            client: {
+              fullName: clientData.name.trim(),
+              phoneNumber: clientData.phoneNumber.trim(),
+              address: clientData.address?.trim() || "Манзил кўрсатилмаган"
+            }
+          }
+        ),
+
         status,
         payType,
-        totalPrice: Number(totalPrice) || 0,
-        orderDate: new Date()
-      }
+      };
+
 
       await Fetch.post('/orders/new', orderData)
 
-      setMessage({ type: 'success', text: 'Буюртма муваффақиятли яратилди ✅' })
+      setMessage({
+        type: 'success',
+        text: `✅ Буюртма муваффақиятли яратилди! Жами: ${totalPrice.toLocaleString()} сўм`
+      })
 
-      // SWR cache yangilash
+      // Update SWR cache
       mutate('/orders')
       mutate('/products')
-      mutate('/reports/daily')
-      mutate('/reports/weekly')
 
-      // Formani tozalash
+
+      // Reset form
       setSelectedProducts([])
+      setScannedProducts(new Set())
       setStatus('Тасдиқланди')
       setPayType('Нақд')
       setTotalPrice(0)
       setClientData({
         clientId: '',
-        name: '',
+        fullName: '',
         phoneNumber: '',
         address: ''
       })
-      setScannerResult('')
+      setScanResult('')
 
-      // Scanner yopish
       if (showScanner) {
         stopScan()
         setShowScanner(false)
       }
+      navigate('/order')
 
-      // Sahifani yangilash
-      setTimeout(() => {
-        navigate('/orders')
-      }, 1500)
     } catch (err) {
       console.error('Buyurtma yaratish xatosi:', err)
       setMessage({
         type: 'error',
         text: err.response?.data?.message || 'Буюртма яратишда хатолик ❌'
       })
+      alert(err.response?.data?.message || 'Буюртма яратишда хатолик ❌')
     } finally {
       setSubmitting(false)
     }
   }
 
-  // Cleanup on unmount
+  // ✅ Cleanup on unmount
   useEffect(() => {
     fetchAllOrders()
 
     return () => {
-      // Scanner cleanup
       stopScan()
-
-      // Fullscreen cleanup
       if (document.fullscreenElement) {
         document.exitFullscreen()
       }
     }
   }, [fetchAllOrders])
 
+  const formatPrice = (value) => {
+    if (!value) return "";
+    const numericValue = value.toString().replace(/\D/g, "");
+    return numericValue.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-4 md:p-6">
-      <div className="max-w-6xl mx-auto">
+      <div>
         {/* Header */}
         <div className="mb-6 md:mb-8">
           <button
@@ -569,7 +683,7 @@ export const AddNewOrder = () => {
           </button>
 
           <div className='flex items-center gap-3'>
-            <div className="bg-blue-100 p-3 rounded-xl">
+            <div className="p-3 rounded-xl bg-blue-100">
               <Package size={28} className='text-blue-600' />
             </div>
             <div>
@@ -583,337 +697,287 @@ export const AddNewOrder = () => {
           </div>
         </div>
 
-        {message && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`flex items-center gap-2 mb-6 p-4 rounded-xl border ${message.type === 'success'
-              ? 'bg-green-100 text-green-700 border-green-200'
-              : 'bg-red-100 text-red-700 border-red-200'
-              }`}
-          >
-            {message.type === 'success' ? (
-              <CheckCircle size={20} />
-            ) : (
-              <AlertCircle size={20} />
-            )}
-            <span className='font-medium'>{message.text}</span>
-          </motion.div>
-        )}
+
 
         <form onSubmit={handleSubmit} className='space-y-8'>
           {/* Mijoz ma'lumotlari */}
-          <div className="bg-gradient-to-br from-white to-blue-50 rounded-2xl border border-blue-200 p-6 shadow-sm">
-            <div className='flex items-center justify-between mb-6'>
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className='flex flex-wrap gap-2 items-center justify-between mb-6'>
               <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                <Users size={20} className='text-blue-600' />
+                <Users size={20} className='text-blue-500' />
                 Мижоз маълумотлари
               </h3>
-              <button
-                type='button'
-                onClick={() => setShowClientsList(!showClientsList)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-xl transition-all duration-200"
-              >
-                <User size={16} />
-                {showClientsList ? 'Янги мижоз' : 'Мавжуд мижоз'}
-              </button>
-            </div>
 
-            {/* ... клиент формаси о'zgarmasdan ... */}
-          </div>
-
-          {/* ✅ YANGI: Camera Scanner Section - AddProduct ga o'xshab */}
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <div className='flex items-center justify-between mb-6'>
-              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                <Camera size={20} className='text-blue-600' />
-                Камера Сканери
-              </h3>
-              <div className="flex items-center gap-3">
-                {showScanner && (
-                  <button
-                    type="button"
-                    onClick={toggleScannerFullscreen}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all duration-200"
-                  >
-                    {scannerFullscreen ? (
-                      <>
-                        <Minimize2 size={16} />
-                        Кичрайтириш
-                      </>
-                    ) : (
-                      <>
-                        <Maximize2 size={16} />
-                        Катталаштириш
-                      </>
-                    )}
-                  </button>
-                )}
-
-                {!showScanner ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowScanner(true)
-                      setScanningFor('product')
-                      setTimeout(() => startScan(), 100)
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all duration-200"
-                  >
-                    <Camera size={16} />
-                    Камерани очиш
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      stopScan()
-                      setShowScanner(false)
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all duration-200"
-                  >
-                    <VideoOff size={16} />
-                    Камерани ёпиш
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* ✅ YANGI: Camera Preview - AddProduct style */}
-            {showScanner ? (
-              <div className="mb-6">
-                <div
-                  ref={scannerContainerRef}
-                  className={`relative rounded-xl overflow-hidden ${scannerFullscreen
-                    ? 'fixed inset-0 z-50 m-0 rounded-none bg-black'
-                    : 'aspect-video bg-gray-900'
-                    } mb-4 transition-all duration-300`}
-                >
-                  <video
-                    ref={videoRef}
-                    className="w-full h-full object-cover"
-                    autoPlay
-                    playsInline
-                    muted
-                  />
-
-                  {/* Loading indicator */}
-                  {!cameraActive && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                      <div className="text-center">
-                        <Loader2 className="w-12 h-12 text-white animate-spin mx-auto mb-4" />
-                        <p className="text-white font-medium">Камера юкланмоқда...</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Scanning animation - AddProduct style */}
-                  {scanning && cameraActive && (
-                    <>
-                      {/* Scanner border */}
-                      <div className="absolute inset-0 border-2 border-blue-500/30 pointer-events-none"></div>
-
-                      {/* Center scanning area */}
-                      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64">
-                        {/* Corner borders */}
-                        <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-blue-500"></div>
-                        <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-blue-500"></div>
-                        <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-blue-500"></div>
-                        <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-blue-500"></div>
-
-                        {/* Scanning line */}
-                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent animate-scan">
-                          <style jsx>{`
-                            @keyframes scan {
-                              0% { transform: translateY(0); }
-                              50% { transform: translateY(256px); }
-                              100% { transform: translateY(0); }
-                            }
-                            .animate-scan {
-                              animation: scan 2s ease-in-out infinite;
-                            }
-                          `}</style>
-                        </div>
-                      </div>
-
-                      {/* Instructions */}
-                      <div className="absolute bottom-4 left-0 right-0 text-center">
-                        <div className="inline-block bg-black/70 text-white px-4 py-2 rounded-full text-sm">
-                          📷 QR кодни марказга келтиринг
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {/* Scanning indicator */}
-                  {isScanning && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                      <div className="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center gap-3">
-                        <Loader2 className="animate-spin text-blue-600" size={32} />
-                        <p className="text-gray-700 font-medium">Сканерлаш жараёнида...</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Camera controls */}
-                  {scanning && (
-                    <div className="absolute bottom-4 right-4">
-                      <button
-                        onClick={stopScan}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-all hover:scale-105"
-                      >
-                        <VideoOff size={16} />
-                        Тўхтатиш
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Scanner info */}
-                <div className="text-sm text-gray-600 flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Scan size={16} />
-                    <span>QR кодини камерага кўрсатинг</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-blue-600">
-                    <Barcode size={16} />
-                    <span>Автоматик сканерлаш</span>
-                  </div>
-                </div>
-
-                {/* Scanner status */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-                  <div className='text-center p-3 bg-blue-50 rounded-lg'>
-                    <div className='text-blue-600 text-xs mb-1'>СКАНЕР ҲОЛАТИ</div>
-                    <div className='font-medium'>
-                      {scanning ? (
-                        <span className='text-green-600'>🟢 Фаол</span>
-                      ) : (
-                        <span className='text-yellow-600'>🟡 Ҳозирланмоқда</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className='text-center p-3 bg-blue-50 rounded-lg'>
-                    <div className='text-blue-600 text-xs mb-1'>СКАНЕРА ОЧИШ</div>
-                    <button
-                      onClick={scanning ? stopScan : startScan}
-                      className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${scanning
-                        ? 'bg-red-500 hover:bg-red-600 text-white'
-                        : 'bg-blue-500 hover:bg-blue-600 text-white'
-                        }`}
-                    >
-                      {scanning ? 'Тўхтатиш' : 'Бошлаш'}
-                    </button>
-                  </div>
-
-                  <div className='text-center p-3 bg-blue-50 rounded-lg'>
-                    <div className='text-blue-600 text-xs mb-1'>КАМЕРА РЕЖИМИ</div>
-                    <div className='font-medium'>
-                      {scannerFullscreen ? '📺 Тўлиқ экран' : '📱 Одатда'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-200 mb-6">
-                <Camera size={48} className="mx-auto mb-3 text-gray-400" />
-                <p className="font-medium text-gray-600">Камера очилмаган</p>
-                <p className="text-sm text-gray-500 mt-1">
-                  Камерани очиш учун тугмани босинг
-                </p>
-              </div>
-            )}
-
-            {/* ✅ YANGI: Manual Scanner Input - improved */}
-            <div className="mb-6">
-              <div className="space-y-3">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={scannerResult}
-                    onChange={(e) => setScannerResult(e.target.value)}
-                    placeholder="QR код ёки модель ID сини киритинг..."
-                    className="border bg-white border-gray-300 w-full p-4 rounded-xl pl-12 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    disabled={isScanning}
-                  />
-                  <QrCode
-                    className='absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400'
-                    size={20}
-                  />
-                  {scannerResult && (
-                    <button
-                      type='button'
-                      onClick={() => setScannerResult('')}
-                      className='absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600'
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
+              <div className="flex items-center gap-2">
                 <button
                   type='button'
-                  onClick={handleManualScanner}
-                  disabled={!scannerResult.trim() || isScanning}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setShowClientsList(!showClientsList)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${showClientsList
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                    }`}
                 >
-                  {isScanning ? (
+                  <User size={16} />
+                  {showClientsList ? 'Янги мижоз' : 'Мавжуд мижоз'}
+                </button>
+
+                {clientData.clientId && (
+                  <button
+                    type='button'
+                    onClick={() => setIsEditingClient(!isEditingClient)}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl transition-all duration-200"
+                  >
+                    <Edit2 size={16} />
+                    Таҳрирлаш
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {showClientsList ? (
+              <div className="space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <input
+                    type="text"
+                    value={clientSearchQuery}
+                    onChange={(e) => setClientSearchQuery(e.target.value)}
+                    placeholder="Исм, телефон ёки манзил бўйича излаш..."
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                    autoFocus
+                  />
+                </div>
+
+                {ordersLoading ? (
+                  <div className="text-center py-8">
+                    <Loader2 className="animate-spin mx-auto mb-2 text-blue-600" size={24} />
+                    <p className="text-gray-600">Мижозлар юкланмоқда...</p>
+                  </div>
+                ) : filteredClients.length > 0 ? (
+                  <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                    {filteredClients.map((client) => (
+                      <motion.div
+                        key={client._id}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`p-4 border border-gray-200 rounded-xl cursor-pointer transition-all hover:shadow-md ${clientData.clientId === client._id
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-gray-50 hover:bg-white'
+                          }`}
+                        onClick={() => handleSelectClient(client)}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="font-semibold text-gray-800">{client.fullName}</div>
+                          <div className="text-sm text-gray-500">
+                            {client.totalOrders} та буюртма
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <div className="flex items-center gap-1">
+                            <Phone size={14} />
+                            <span>{client.phoneNumber}</span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-200">
+                    <User className="mx-auto mb-3 text-gray-400" size={32} />
+                    <p className="font-medium text-gray-600">Мижозлар топилмади</p>
+                    <p className="text-sm text-gray-500 mt-1">Янги мижоз қўшиш учун тугмани босинг</p>
+                    <button
+                      type="button"
+                      onClick={handleAddNewClient}
+                      className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all"
+                    >
+                      <UserPlus size={16} className="inline mr-2" />
+                      Янги мижоз
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Исм <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={clientData.name}
+                      onChange={(e) => handleClientChange('name', e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      placeholder="Тўлиқ исм"
+                      disabled={clientData.clientId && !isEditingClient}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Телефон <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={clientData.phoneNumber}
+                      onChange={(e) => handleClientChange('phoneNumber', e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      placeholder="+998 XX XXX XX XX"
+                      disabled={clientData.clientId && !isEditingClient}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                  <div className="text-sm text-gray-600">
+                    {clientData.clientId ? (
+                      <span className="text-green-600">✅ Мавжуд мижоз танланди</span>
+                    ) : (
+                      <span className="text-blue-600">🆕 Янги мижоз қўшилмоқда</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {clientData.clientId && (
+                      <button
+                        type="button"
+                        onClick={handleClearClient}
+                        className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xl transition-all duration-200"
+                      >
+                        <X size={16} />
+                        Тозалаш
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Camera Scanner Section */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className='flex flex-wrap gap-2 items-center justify-between mb-6'>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2 mb-1">
+                  <Camera size={20} className='text-blue-500' />
+                  Камера Сканери
+                </h3>
+                <p className="text-gray-600">
+                  QR кодни камерага кўрсатинг ёки расм юкланг
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowScanner(!showScanner)
+                    if (!showScanner) {
+                      setTimeout(() => startScan(), 300)
+                    } else {
+                      stopScan()
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all duration-200"
+                >
+                  {showScanner ? (
                     <>
-                      <Loader2 className="animate-spin" size={16} />
-                      Сканерлаш жараёнида...
+                      <VideoOff size={16} />
+                      Япиш
                     </>
                   ) : (
                     <>
-                      <Scan size={16} />
-                      Қўлда киритиш
+                      <Camera size={16} />
+                      Камерани очиш
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Scanner Error */}
-            {scannerError && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
-                <div className="flex items-center gap-2 text-red-600">
-                  <AlertCircle size={16} />
-                  <span>{scannerError}</span>
+            {/* Manual Scanner Input */}
+            <div className="mb-6">
+              <div className="space-y-3">
+                <label className="text-sm font-semibold flex items-center gap-2 text-gray-800">
+                  <QrCode size={16} className='text-blue-500' />
+                  Қўлда киритиш
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={scanResult}
+                    onChange={(e) => setScanResult(e.target.value)}
+                    placeholder="QR код ёки модель ID сини киритинг..."
+                    className="w-full border-2 border-gray-300 rounded-xl px-12 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  />
+                  <QrCode
+                    className='absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400'
+                    size={20}
+                  />
+                  {scanResult && (
+                    <button
+                      type='button'
+                      onClick={() => setScanResult('')}
+                      className='absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600'
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
                 </div>
-              </div>
-            )}
-
-            {/* Scanner Result */}
-            {scannerResult && !scannerError && (
-              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-green-700 text-sm font-medium">
-                      Сканланган натижа:
-                    </p>
-                    <p className="text-green-800 text-lg font-mono mt-1 break-all">
-                      {scannerResult}
-                    </p>
-                  </div>
+                <div className="flex gap-3">
                   <button
-                    onClick={() => setScannerResult('')}
-                    className="p-2 hover:bg-green-100 rounded-lg transition-colors"
-                    title="Тозалаш"
+                    type='button'
+                    onClick={handleManualScanner}
+                    disabled={!scanResult.trim() || isProcessingScan}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <X size={16} className="text-green-600" />
+                    {isProcessingScan ? (
+                      <>
+                        <Loader2 className="animate-spin" size={16} />
+                        Сканерлаш...
+                      </>
+                    ) : (
+                      <>
+                        <Scan size={16} />
+                        Сканерлаш
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-all duration-200"
+                  >
+                    <Upload size={16} />
+                    Расм юклаш
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Scanner Error */}
+            {scanError && (
+              <div className="mb-6 p-4 rounded-xl border border-red-200 bg-red-50 text-red-600">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={16} />
+                  <span className="font-medium">Хатолик:</span>
+                  <span>{scanError}</span>
+                </div>
+              </div>
             )}
 
-            {/* ✅ YANGI: Selected Products */}
-            {selectedProducts.length > 0 && (
-              <div className="mt-6">
+            {/* Selected Products */}
+            {selectedProducts.length > 0 ? (
+              <div className="mt-8">
                 <div className="flex items-center justify-between mb-6">
                   <h4 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                    <CheckCircle size={20} className='text-green-600' />
+                    <CheckCircle size={20} className='text-green-500' />
                     Танланган маҳсулотлар ({selectedProducts.length})
                   </h4>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-lg font-bold text-green-600">
                     Жами: {totalPrice.toLocaleString()} сўм
                   </div>
                 </div>
@@ -921,6 +985,7 @@ export const AddNewOrder = () => {
                 <div className="space-y-4">
                   {selectedProducts.map((item, index) => (
                     <ProductItem
+                      maxcount={selectedProducts.count}
                       key={item._id}
                       item={item}
                       index={index}
@@ -932,14 +997,30 @@ export const AddNewOrder = () => {
                   ))}
                 </div>
 
-                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                <div className="mt-6 p-6 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-green-50">
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-700 font-medium">Жами сумма:</span>
-                    <span className="text-2xl font-bold text-green-600">
-                      {totalPrice.toLocaleString()} сўм
-                    </span>
+                    <div>
+                      <h5 className="text-gray-800 font-semibold mb-1">Жами сумма:</h5>
+                      <p className="text-sm text-gray-600">{selectedProducts.length} та маҳсулот</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-3xl font-bold text-green-600">
+                        {totalPrice.toLocaleString()} сўм
+                      </div>
+                      <div className="text-sm text-gray-600 mt-1">
+                        {totalPrice > 0 ? `(${(totalPrice / 12100).toFixed(2)} USD)` : ''}
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 rounded-xl border border-gray-200 bg-gray-50">
+                <Box size={48} className="mx-auto mb-3 text-gray-400" />
+                <p className="font-medium text-gray-600">Маҳсулотлар қўшилмаган</p>
+                <p className="text-sm text-gray-500 mt-1 mb-4">
+                  QR кодни сканнеринг ёки модель ID сини киритинг
+                </p>
               </div>
             )}
           </div>
@@ -947,48 +1028,42 @@ export const AddNewOrder = () => {
           {/* Hidden canvas for QR scanning */}
           <canvas ref={canvasRef} className="hidden" />
 
-          {/* Order Parameters */}
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <Hash size={20} className='text-blue-600' />
-              Буюртма параметрлари
-            </h3>
+          {/* Hidden file input for image upload */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImageUpload}
+            accept="image/*"
+            className="hidden"
+          />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className='space-y-2'>
-                <label className="text-sm font-semibold text-gray-800">
-                  Ҳолат
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="border bg-white border-gray-300 w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+          {/* Message Display */}
+          <AnimatePresence>
+            {message && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className={`flex items-center gap-2 mb-6 p-4 rounded-xl border ${message.type === 'success'
+                  ? 'bg-green-100 text-green-700 border-green-200'
+                  : 'bg-red-100 text-red-700 border-red-200'
+                  }`}
+              >
+                {message.type === 'success' ? (
+                  <CheckCircle size={20} />
+                ) : (
+                  <AlertCircle size={20} />
+                )}
+                <span className='font-medium'>{message.text}</span>
+                <button
+                  onClick={() => setMessage(null)}
+                  className="ml-auto p-1 hover:bg-white/50 rounded-lg"
                 >
-                  <option value="Тасдиқланди">Тасдиқланди</option>
-                  <option value="Юборилди">Юборилди</option>
-                  <option value="Кутилмоқда">Кутилмоқда</option>
-                  <option value="Бажарилган">Бажарилган</option>
-                  <option value="Бекор қилинган">Бекор қилинган</option>
-                </select>
-              </div>
-
-              <div className='space-y-2'>
-                <label className="text-sm font-semibold text-gray-800">
-                  Тўлов тури
-                </label>
-                <select
-                  value={payType}
-                  onChange={(e) => setPayType(e.target.value)}
-                  className="border bg-white border-gray-300 w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                >
-                  <option value="Нақд">Нақд</option>
-                  <option value="Карта">Карта</option>
-                  <option value="Қарз">Қарз</option>
-                  <option value="Бошқа">Бошқа</option>
-                </select>
-              </div>
-            </div>
-          </div>
+                  <X size={16} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Submit buttons */}
           <div className='flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200'>
@@ -996,7 +1071,7 @@ export const AddNewOrder = () => {
               type='button'
               onClick={() => navigate(-1)}
               disabled={submitting}
-              className='flex items-center justify-center gap-2 px-8 py-4 bg-gray-600 hover:bg-gray-700 text-white rounded-xl font-semibold transition-all duration-200 w-full sm:w-auto disabled:opacity-50'
+              className="flex items-center justify-center gap-2 px-8 py-4 bg-gray-600 hover:bg-gray-700 text-white rounded-xl font-semibold transition-all duration-200 w-full sm:w-auto disabled:opacity-50"
             >
               <X size={20} />
               Бекор қилиш
@@ -1005,31 +1080,168 @@ export const AddNewOrder = () => {
             <button
               type='submit'
               disabled={submitting || selectedProducts.length === 0}
-              className='flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto flex-1'
+              className='flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white rounded-xl font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto flex-1'
             >
               {submitting ? (
-                <Loader2 className='animate-spin' size={20} />
+                <>
+                  <Loader2 className='animate-spin' size={20} />
+                  Сақланмоқда...
+                </>
               ) : (
-                <Save size={20} />
+                <>
+                  <Save size={20} />
+                  Буюртмани сақлаш ({selectedProducts.length} та маҳсулот)
+                </>
               )}
-              {submitting ? 'Сақланмоқда...' : 'Буюртмани сақлаш'}
             </button>
           </div>
         </form>
       </div>
 
-      {/* ✅ YANGI: Scanner Tips Modal */}
+      {/* QR Scanner Modal */}
       <AnimatePresence>
-        {showScanner && scannerFullscreen && (
+        {showScanner && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className='fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[102]'
+            className='fixed inset-0 bg-black/90 backdrop-blur-sm z-[101] flex items-center justify-center p-4'
+            onClick={() => {
+              setShowScanner(false)
+              stopScan()
+            }}
           >
-            <div className='bg-black/70 text-white px-4 py-2 rounded-full text-sm'>
-              📱 Камерани QR кодга қаратинг | 🌟 Ёруғроқ жойда сканлаш маъқул
-            </div>
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              ref={scannerContainerRef}
+              className={`relative ${cameraFullscreen ? 'w-screen h-screen' : 'max-w-4xl w-full'} bg-gray-900 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300`}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className='p-4 sm:p-6 bg-gradient-to-r from-blue-700 to-blue-900'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-3'>
+                    <Camera className='h-6 w-6 text-white' />
+                    <h3 className='text-xl font-bold text-white'>
+                      QR код сканер (Модель ID)
+                    </h3>
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <button
+                      onClick={toggleCameraFullscreen}
+                      className='p-2 hover:bg-blue-800 rounded-lg transition-colors text-white'
+                      title={cameraFullscreen ? 'Кичрайтириш' : 'Катталаштириш'}
+                    >
+                      {cameraFullscreen ? (
+                        <Minimize2 className='h-5 w-5' />
+                      ) : (
+                        <Maximize2 className='h-5 w-5' />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowScanner(false)
+                        stopScan()
+                      }}
+                      className='p-2 hover:bg-blue-800 rounded-lg transition-colors'
+                    >
+                      <X className='h-5 w-5 text-white' />
+                    </button>
+                  </div>
+                </div>
+                <p className='text-blue-200 text-sm mt-2'>
+                  Маҳсулот учун QR кодни камерага кўрсатинг
+                </p>
+              </div>
+
+              <div className='p-4'>
+                {scanError && (
+                  <div className='mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg'>
+                    <p className='text-red-300 text-sm'>{scanError}</p>
+                  </div>
+                )}
+
+                <div className='relative'>
+                  <div className='relative rounded-xl overflow-hidden bg-black'>
+                    <video
+                      ref={videoRef}
+                      className={`w-full ${cameraFullscreen ? 'h-[calc(100vh-180px)]' : 'h-[500px]'} object-cover`}
+                      playsInline
+                      autoPlay
+                      muted
+                    />
+
+                    {/* Scanning overlay */}
+                    {scanning && (
+                      <>
+                        <div className='absolute inset-0 border-2 border-blue-500/30 pointer-events-none'></div>
+
+                        <div className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64'>
+                          <div className='absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-blue-500'></div>
+                          <div className='absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-blue-500'></div>
+                          <div className='absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-blue-500'></div>
+                          <div className='absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-blue-500'></div>
+
+                          <div className='absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent animate-scan'>
+
+                          </div>
+                        </div>
+
+                        <div className='absolute bottom-4 left-0 right-0 text-center'>
+                          <div className='inline-block bg-black/70 text-white px-4 py-2 rounded-full text-sm'>
+                            📷 QR кодни марказга келтиринг
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Camera controls */}
+                    <div className='absolute bottom-4 right-4 flex items-center gap-2'>
+                      {!scanning && (
+                        <button
+                          onClick={() => startScan()}
+                          className='flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-medium transition-all hover:scale-105'
+                        >
+                          <Camera className='h-4 w-4' />
+                          Сканерни бошлаш
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <canvas
+                    ref={canvasRef}
+                    className='hidden'
+                  />
+                </div>
+
+                {scanResult && (
+                  <div className='mt-4 p-4 bg-green-900/30 border border-green-700 rounded-xl'>
+                    <div className='flex items-center justify-between'>
+                      <div>
+                        <p className='text-green-300 text-sm font-medium'>
+                          Муваффақиятли сканланди:
+                        </p>
+                        <p className='text-green-400 text-lg font-mono mt-1 break-all'>
+                          {scanResult}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setScanResult('')
+                          startScan()
+                        }}
+                        className='p-2 hover:bg-green-800 rounded-lg transition-colors'
+                        title='Янги скан'
+                      >
+                        <Camera className='h-5 w-5 text-green-300' />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1037,8 +1249,9 @@ export const AddNewOrder = () => {
   )
 }
 
-// ProductItem component (o'zgarmasdan qoladi)
+// ProductItem Component - Light mode ga optimallashtirildi
 const ProductItem = ({
+  maxcount,
   item,
   index,
   onQuantityChange,
@@ -1046,104 +1259,218 @@ const ProductItem = ({
   onPriceChange,
   onRemove
 }) => {
+  const [priceInput, setPriceInput] = useState(item.price?.toString() || '')
+  const [showImagePreview, setShowImagePreview] = useState(null)
   const totalPrice = (item.price || 0) * item.quantity
 
+  const handlePriceChangeLocal = (value) => {
+    setPriceInput(value)
+    const cleanValue = value.replace(/\D/g, '')
+    onPriceChange(item._id, cleanValue)
+  }
+
+  const formatPrice = (price) => {
+    if (!price) return '0'
+
+    const cleaned = price
+      .toString()
+      .replace(/\s/g, '')
+      .replace(/,/g, '')
+
+    const num = Number(cleaned)
+    if (isNaN(num)) return '0'
+
+    return num.toLocaleString('uz-UZ')
+  }
+
+
+
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05 }}
-      className="flex items-center justify-between p-4 border border-gray-200 rounded-xl bg-gray-50 transition-all duration-200 hover:bg-white hover:shadow-sm"
-    >
-      <div className='flex-1 min-w-0'>
-        <div className='flex items-center justify-between mb-2'>
-          <div className="font-medium text-gray-800 truncate mr-2">
-            {item.title}
-          </div>
-          <span className="text-sm text-gray-500 whitespace-nowrap">
-            ID: {item.model}
-          </span>
-        </div>
-
-        <div className='flex flex-wrap items-center gap-4 text-sm mb-3'>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-600">Ранг:</span>
-            <span className="font-medium text-gray-800">{item.color}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-gray-600">Ўлчам:</span>
-            <span className="font-medium text-gray-800">{item.size}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-gray-600">Стиль:</span>
-            <span className="font-medium text-gray-800">{item.style}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className='flex flex-col md:flex-row items-center gap-4 ml-4'>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-300">
-            <input
-              type="number"
-              min="0"
-              step="1000"
-              value={item.price || ''}
-              onChange={(e) => onPriceChange(item._id, e.target.value)}
-              placeholder="Нарх"
-              className="w-20 text-center border-0 bg-transparent outline-none text-gray-800"
-            />
-            <span className="text-sm text-gray-500 whitespace-nowrap">
-              сўм
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-300">
+    <>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: index * 0.05 }}
+        className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 border border-gray-200 rounded-xl bg-white hover:shadow-sm transition-all duration-200"
+      >
+        <div className='flex-1 min-w-0 mb-4 md:mb-0'>
+          <div className='flex items-start justify-between mb-3'>
+            <div className='flex-1 min-w-0'>
+              <div className="font-bold truncate mr-2 text-lg text-gray-800">
+                {item.title}
+              </div>
+              <div className="text-sm mt-1 text-gray-500">
+                Категория: {item.category} • Модель: <code className="px-2 py-1 rounded bg-gray-100 text-gray-800">{item.model}</code>
+              </div>
+            </div>
             <button
               type='button'
-              onClick={() => onQuantityChange(item._id, -1)}
-              className="p-1 bg-gray-100 hover:bg-gray-200 rounded-full transition disabled:opacity-50"
-              disabled={item.quantity <= 1}
+              onClick={() => onRemove(item._id)}
+              className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition"
+              title='Маҳсулотни ўчириш'
             >
-              <Minus size={16} />
+              <Trash2 size={18} />
             </button>
-            <input
-              type='number'
-              min='1'
-              value={item.quantity}
-              onChange={e => onInputQuantityChange(item._id, e.target.value)}
-              className="w-16 text-center border-0 bg-transparent outline-none text-gray-800"
-            />
-            <button
-              type='button'
-              onClick={() => onQuantityChange(item._id, 1)}
-              className="p-1 bg-gray-100 hover:bg-gray-200 rounded-full transition"
-            >
-              <Plus size={16} />
-            </button>
-            <span className="text-sm text-gray-500 whitespace-nowrap">
-              дона
-            </span>
           </div>
 
-          <div className="text-sm text-gray-600 text-center">
-            Жами: {totalPrice.toLocaleString()} сўм
+          <div className='flex flex-wrap items-center gap-4 text-sm mb-3'>
+            {item.color && item.color !== '--' && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Ранг:</span>
+                <span className="font-medium px-2 py-1 rounded bg-gray-100 text-gray-800">
+                  {item.color}
+                </span>
+              </div>
+            )}
+
+            {item.size && item.size !== '--' && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Ўлчам:</span>
+                <span className="font-medium px-2 py-1 rounded bg-gray-100 text-gray-800">
+                  {item.size}
+                </span>
+              </div>
+            )}
+
+            {item.style && item.style !== '--' && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Стиль:</span>
+                <span className="font-medium px-2 py-1 rounded bg-gray-100 text-gray-800">
+                  {item.style}
+                </span>
+              </div>
+            )}
           </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-gray-600">Бирлик:</span>
+              <span className="font-medium text-gray-800">{item.unit}</span>
+            </div>
+            {item.count > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Омборда:</span>
+                <span className={`font-medium ${item.count < item.quantity ? 'text-red-600' : 'text-green-600'}`}>
+                  {item.count} {item.unit}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {item.images && item.images.length > 0 && (
+            <div className="mt-3 flex items-center gap-2">
+              <ImageIcon size={14} className="text-gray-500" />
+              <button
+                type='button'
+                onClick={() => setShowImagePreview(item.images[0])}
+                className="text-xs text-blue-600 hover:text-blue-700"
+              >
+                Расмни кўриш
+              </button>
+            </div>
+          )}
         </div>
 
-        <button
-          type='button'
-          onClick={() => onRemove(item._id)}
-          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition self-start md:self-center"
-          title='Маҳсулотни ўчириш'
-        >
-          <Trash2 size={18} />
-        </button>
-      </div>
-    </motion.div>
+        <div className='flex flex-col md:flex-row items-center gap-6 w-full md:w-auto'>
+          {/* Price Input */}
+          <div className="w-full md:w-48">
+            <label className="text-sm mb-1 block text-gray-600">Нарх</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={formatPrice(priceInput)}
+                onChange={(e) => handlePriceChangeLocal(e.target.value)}
+                placeholder="Нарх"
+                className="w-full px-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-lg font-medium text-right"
+              />
+              <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                сўм
+              </span>
+            </div>
+          </div>
+
+          {/* Quantity Controls */}
+          <div className="w-full md:w-48">
+            <label className="text-sm mb-1 block text-gray-600">Миқдор</label>
+            <div className="flex items-center gap-3">
+              <button
+                type='button'
+                onClick={() => onQuantityChange(item._id, -1)}
+                className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition disabled:opacity-50"
+                disabled={item.quantity <= 1}
+              >
+                <Minus size={16} />
+              </button>
+
+              <div className="flex-1 text-center">
+                <input
+                  type='number'
+                  min='1'
+                  value={item.quantity}
+                  onChange={e => onInputQuantityChange(item._id, e.target.value)}
+                  className="w-20 text-center border-0 bg-transparent outline-none text-lg font-medium text-gray-800"
+                />
+                <div className="text-xs mt-1 text-gray-500">{item.unit}</div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onQuantityChange(item._id, 1)}
+                disabled={item.quantity >= item.count}
+                className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus size={16} />
+              </button>
+
+            </div>
+          </div>
+
+          {/* Total Price */}
+          <div className="text-center">
+            <div className="text-sm mb-1 text-gray-600">Жами</div>
+            <div className="text-xl font-bold text-green-600">
+              {totalPrice.toLocaleString()} сўм
+            </div>
+            <div className="text-xs mt-1 text-gray-500">
+              {item.quantity} × {item.price?.toLocaleString()}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Image Preview Modal */}
+      <AnimatePresence>
+        {showImagePreview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className='fixed inset-0 bg-black/90 backdrop-blur-sm z-[101] flex items-center justify-center p-4'
+            onClick={() => setShowImagePreview(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className='relative max-w-4xl max-h-[90vh]'
+              onClick={e => e.stopPropagation()}
+            >
+              <img
+                src={showImagePreview}
+                alt='Preview'
+                className='w-full h-full object-contain rounded-lg'
+              />
+              <button
+                onClick={() => setShowImagePreview(null)}
+                className='absolute top-4 right-4 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors'
+              >
+                <X size={20} />
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   )
 }
