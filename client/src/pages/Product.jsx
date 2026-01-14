@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect, useMemo } from 'react'
+import { useState, useContext, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import useSWR from 'swr'
 import {
@@ -21,7 +21,12 @@ import {
   Image as ImageIcon,
   Edit,
   BarChart3,
-  ShoppingBag
+  ShoppingBag,
+  Upload,
+  X,
+  AlertCircle,
+  Check,
+  RefreshCw
 } from 'lucide-react'
 import Fetch from '../middlewares/fetcher'
 import AddProductModal from '../components/AddProductModal'
@@ -33,7 +38,7 @@ export const ProductsPage = () => {
   const { user } = useContext(ContextData)
   const { type } = useParams()
   const navigate = useNavigate()
-  const isHide = localStorage.getItem("hide") === "true"
+  const fileInputRef = useRef(null)
 
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -49,6 +54,16 @@ export const ProductsPage = () => {
   const [deleting, setDeleting] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+
+  // Image management states
+  const [uploadingImages, setUploadingImages] = useState({})
+  const [removingImages, setRemovingImages] = useState({})
+  const [localImagePreviews, setLocalImagePreviews] = useState({})
+  const [selectedFiles, setSelectedFiles] = useState({})
+  const [uploadProgress, setUploadProgress] = useState({})
+
+  // Rasm o'zgartirish uchun alohida state
+  const [imageChanges, setImageChanges] = useState({})
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -100,30 +115,91 @@ export const ProductsPage = () => {
   const handleSave = async id => {
     try {
       setLoading(id)
+
+      // Asosiy ma'lumotlarni tayyorlash
       const updateData = {
-        title: editing[id].title,
-        category: editing[id].category,
-        gender: editing[id].gender,
-        season: editing[id].season,
-        material: editing[id].material,
-        sku: editing[id].sku,
-        count: editing[id].count
+        title: editing[id]?.title || viewData?.title,
+        category: editing[id]?.category || viewData?.category,
+        gender: editing[id]?.gender || viewData?.gender,
+        season: editing[id]?.season || viewData?.season,
+        material: editing[id]?.material || viewData?.material,
+        sku: editing[id]?.sku || viewData?.sku,
+        count: editing[id]?.count || viewData?.count
+      }
+
+      // Agar rasmlar o'zgartirilgan bo'lsa, ularni ham qo'shamiz
+      if (imageChanges[id]) {
+        updateData.mainImages = imageChanges[id].mainImages
       }
 
       await Fetch.put(`/products/${id}`, updateData)
+
+      // Editing state'ni tozalash
       setEditing(prev => {
         const copy = { ...prev }
         delete copy[id]
         return copy
       })
-      setViewData(null)
+
+      // Image changes state'ni tozalash
+      setImageChanges(prev => {
+        const copy = { ...prev }
+        delete copy[id]
+        return copy
+      })
+
+      // View data'ni yangilash
+      if (viewData && viewData._id === id) {
+        setViewData(prev => ({
+          ...prev,
+          ...updateData
+        }))
+      }
+
+      // Mutate bilan yangilash
       mutate()
+
+      // Muvaffaqiyat xabari
+      alert('✅ Маҳсулот муваффақиятли сақланди')
+
     } catch (err) {
       console.error('Update error:', err)
       alert('❌ Сақлашда хатолик юз берди')
     } finally {
       setLoading(null)
+      setViewData(null)
     }
+  }
+
+  // Cancel editing function
+  const handleCancelEditing = (id) => {
+    setEditing(prev => {
+      const copy = { ...prev }
+      delete copy[id]
+      return copy
+    })
+
+    setImageChanges(prev => {
+      const copy = { ...prev }
+      delete copy[id]
+      return copy
+    })
+
+    // Agar local preview lar bo'lsa, tozalash
+    if (localImagePreviews[id]) {
+      localImagePreviews[id].forEach(url => URL.revokeObjectURL(url))
+      setLocalImagePreviews(prev => {
+        const newPreviews = { ...prev }
+        delete newPreviews[id]
+        return newPreviews
+      })
+    }
+
+    setSelectedFiles(prev => {
+      const newFiles = { ...prev }
+      delete newFiles[id]
+      return newFiles
+    })
   }
 
   const handleDelete = async (id) => {
@@ -138,6 +214,227 @@ export const ProductsPage = () => {
     } finally {
       setDeleting(null)
     }
+  }
+
+  // Image Upload Handler - ImgBB ga upload qilish
+  const handleImageUpload = async (productId, files) => {
+    try {
+      setUploadingImages(prev => ({ ...prev, [productId]: true }))
+
+      const fileArray = Array.from(files)
+      const uploadedUrls = []
+      let successfulUploads = 0
+
+      // Progress yangilash
+      setUploadProgress(prev => ({
+        ...prev,
+        [productId]: {
+          total: fileArray.length,
+          completed: 0,
+          current: 0
+        }
+      }))
+
+      // Har bir faylni alohida yuklash
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i]
+
+        try {
+          // Progress yangilash
+          setUploadProgress(prev => ({
+            ...prev,
+            [productId]: {
+              ...prev[productId],
+              current: i + 1
+            }
+          }))
+
+          // ImgBB ga yuklash
+          const url = await uploadImage(file)
+          uploadedUrls.push(url)
+          successfulUploads++
+
+          // Progress yangilash
+          setUploadProgress(prev => ({
+            ...prev,
+            [productId]: {
+              ...prev[productId],
+              completed: i + 1
+            }
+          }))
+
+        } catch (error) {
+          console.error(`Rasm yuklashda xatolik (${file.name}):`, error)
+          setUploadProgress(prev => ({
+            ...prev,
+            [productId]: {
+              ...prev[productId],
+              completed: i + 1
+            }
+          }))
+          continue
+        }
+      }
+
+      if (uploadedUrls.length > 0) {
+        // Image changes state'ga qo'shamiz
+        const currentImages = viewData?.mainImages || []
+        const newImages = [...currentImages, ...uploadedUrls]
+
+        setImageChanges(prev => ({
+          ...prev,
+          [productId]: {
+            ...prev[productId],
+            mainImages: newImages
+          }
+        }))
+
+        // View data'ni yangilash
+        if (viewData && viewData._id === productId) {
+          setViewData(prev => ({
+            ...prev,
+            mainImages: newImages
+          }))
+        }
+
+        // Clear local previews
+        if (localImagePreviews[productId]) {
+          localImagePreviews[productId].forEach(url => URL.revokeObjectURL(url))
+          setLocalImagePreviews(prev => {
+            const newPreviews = { ...prev }
+            delete newPreviews[productId]
+            return newPreviews
+          })
+        }
+
+        setSelectedFiles(prev => {
+          const newFiles = { ...prev }
+          delete newFiles[productId]
+          return newFiles
+        })
+
+        // Muvaffaqiyat xabari
+        if (successfulUploads === fileArray.length) {
+          alert(`✅ Барча ${successfulUploads} та расм муваффақиятли юкланди`)
+        } else {
+          alert(`✅ ${successfulUploads} та расм юкланди, ${fileArray.length - successfulUploads} тасида хатолик`)
+        }
+      }
+
+      // Progressni tozalash
+      setUploadProgress(prev => {
+        const newProgress = { ...prev }
+        delete newProgress[productId]
+        return newProgress
+      })
+
+    } catch (err) {
+      console.error('Umumiy xatolik:', err)
+      alert('❌ Расм юклашда хатолик юз берди')
+    } finally {
+      setUploadingImages(prev => ({ ...prev, [productId]: false }))
+    }
+  }
+
+  // Image Remove Handler - local state'da o'chirish
+  const handleImageRemove = (productId, imageUrl) => {
+    try {
+      setRemovingImages(prev => ({ ...prev, [imageUrl]: true }))
+
+      // Hozirgi rasmlarni filter qilish
+      const currentImages = viewData?.mainImages || []
+      const updatedImages = currentImages.filter(img => img !== imageUrl)
+
+      // Image changes state'ga saqlaymiz
+      setImageChanges(prev => ({
+        ...prev,
+        [productId]: {
+          ...prev[productId],
+          mainImages: updatedImages
+        }
+      }))
+
+      // View data'ni yangilash
+      if (viewData && viewData._id === productId) {
+        setViewData(prev => ({
+          ...prev,
+          mainImages: updatedImages
+        }))
+      }
+
+      alert('✅ Расм ўчирилди (ҳали сақланмаган)')
+    } catch (err) {
+      console.error('Image remove error:', err)
+      alert('❌ Расм ўчиришда хатолик юз берди')
+    } finally {
+      setRemovingImages(prev => ({ ...prev, [imageUrl]: false }))
+    }
+  }
+
+  // uploadImage funksiyasi - ImgBB ga yuklash
+  const uploadImage = async (file) => {
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(
+        `https://api.imgbb.com/1/upload?key=955f1e37f0aa643262e734c080305b10`,
+        {
+          method: 'POST',
+          body: formData
+        }
+      );
+
+      const data = await response.json();
+
+      if (data && data.data && data.data.url) {
+        return data.data.url;
+      }
+
+      throw new Error('Rasm yuklashda xatolik');
+    } catch (error) {
+      console.error('Rasm yuklashda xatolik:', error);
+      throw error;
+    }
+  };
+
+  // File selection handler with preview
+  const handleFileSelect = (productId, event) => {
+    const files = event.target.files
+    if (!files.length) return
+
+    setSelectedFiles(prev => ({ ...prev, [productId]: files }))
+
+    // Create preview URLs
+    const previewUrls = []
+    for (let i = 0; i < Math.min(files.length, 4); i++) {
+      previewUrls.push(URL.createObjectURL(files[i]))
+    }
+
+    setLocalImagePreviews(prev => ({
+      ...prev,
+      [productId]: previewUrls
+    }))
+  }
+
+  // Clear selected files
+  const clearSelectedFiles = (productId) => {
+    // Revoke object URLs
+    if (localImagePreviews[productId]) {
+      localImagePreviews[productId].forEach(url => URL.revokeObjectURL(url))
+    }
+
+    setLocalImagePreviews(prev => {
+      const newPreviews = { ...prev }
+      delete newPreviews[productId]
+      return newPreviews
+    })
+
+    setSelectedFiles(prev => {
+      const newFiles = { ...prev }
+      delete newFiles[productId]
+      return newFiles
+    })
   }
 
   const handlePageChange = (newPage) => {
@@ -159,6 +456,11 @@ export const ProductsPage = () => {
   const genders = ["men", "women", "kids", "unisex"]
 
   const seasons = ["summer", "winter", "spring", "autumn", "all"]
+
+  // Edit mode'ni tekshirish
+  const isEditMode = (productId) => {
+    return !!(editing[productId] || imageChanges[productId])
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4 md:p-6 transition-colors duration-300">
@@ -315,7 +617,7 @@ export const ProductsPage = () => {
                       {product.mainImages && product.mainImages.length > 0 ? (
                         <div className="relative h-48 rounded-xl overflow-hidden">
                           <img
-                            onClick={() => setViewData(product)}
+                            onClick={() => setImagePreview(product.mainImages)}
                             src={product.mainImages[0]}
                             alt={product.title}
                             className="w-full h-full object-cover"
@@ -458,9 +760,13 @@ export const ProductsPage = () => {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               {product.mainImages && product.mainImages.length > 0 ? (
-                                <div className="relative h-12 w-12 rounded-lg overflow-hidden">
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setImagePreview(product.mainImages)
+                                  }}
+                                  className="relative h-12 w-12 rounded-lg overflow-hidden">
                                   <img
-                                    onClick={() => setViewData(product)}
                                     src={product.mainImages[0]}
                                     alt={product.title}
                                     className="w-full h-full object-cover cursor-pointer"
@@ -659,14 +965,24 @@ export const ProductsPage = () => {
         {/* Modals */}
         <AddProductModal open={open} setOpen={setOpen} mutate={mutate} />
 
-        {/* Product Detail Modal */}
+        {/* Product Detail Modal with Image Management */}
         <AnimatePresence>
           {viewData && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setViewData(null)}
+              onClick={() => {
+                // Agar edit mode da bo'lsa, chiqishdan oldin tasdiqlash
+                if (isEditMode(viewData._id)) {
+                  if (window.confirm('Ўзгартиришлар сақланмаган. Ростдан чиқмоқчимисиз?')) {
+                    handleCancelEditing(viewData._id)
+                    setViewData(null)
+                  }
+                } else {
+                  setViewData(null)
+                }
+              }}
               className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center z-50 p-2 md:p-4"
             >
               <motion.div
@@ -674,15 +990,29 @@ export const ProductsPage = () => {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
                 onClick={e => e.stopPropagation()}
-                className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl relative bg-white"
+                className="w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl relative bg-white"
               >
                 <div className="sticky z-10 top-0 border-b border-gray-200 px-4 md:px-6 py-4 rounded-t-2xl flex justify-between items-center bg-white">
                   <h2 className="text-lg md:text-xl font-bold flex items-center gap-2 text-gray-800">
                     <Tag size={20} className="text-blue-600" />
                     Маҳсулот маълумотлари
+                    {isEditMode(viewData._id) && (
+                      <span className="text-sm px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full">
+                        Таҳрирланаётган
+                      </span>
+                    )}
                   </h2>
                   <button
-                    onClick={() => setViewData(null)}
+                    onClick={() => {
+                      if (isEditMode(viewData._id)) {
+                        if (window.confirm('Ўзгартиришлар сақланмаган. Ростдан чиқмоқчимисиз?')) {
+                          handleCancelEditing(viewData._id)
+                          setViewData(null)
+                        }
+                      } else {
+                        setViewData(null)
+                      }
+                    }}
                     className="text-gray-500 hover:text-black transition p-1 rounded-full hover:bg-gray-100"
                   >
                     ✖
@@ -690,32 +1020,53 @@ export const ProductsPage = () => {
                 </div>
 
                 <div className="p-4 md:p-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Left Column - Images & Basic Info */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Left Column - Images Management */}
                     <div className="space-y-6">
-                      {/* Image Gallery */}
+                      {/* Existing Images */}
                       <div>
-                        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-600 mb-3">
-                          Расмлар
-                        </h3>
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-600">
+                            Мавжуд расмлар
+                          </h3>
+                          {viewData.mainImages && viewData.mainImages.length > 0 && (
+                            <span className="text-xs text-gray-500">
+                              {viewData.mainImages.length} та расм
+                            </span>
+                          )}
+                        </div>
+
                         {viewData.mainImages && viewData.mainImages.length > 0 ? (
                           <div className="grid grid-cols-2 gap-3">
-                            {viewData.mainImages.slice(0, 4).map((img, index) => (
+                            {viewData.mainImages.map((img, index) => (
                               <div
                                 key={index}
-                                className="relative h-40 rounded-lg overflow-hidden cursor-pointer"
-                                onClick={() => setImagePreview(img)}
+                                className="relative group rounded-lg overflow-hidden border border-gray-300"
                               >
                                 <img
                                   src={img}
                                   alt={`${viewData.title} - ${index + 1}`}
-                                  className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                                  className="w-full h-32 object-cover hover:scale-105 transition-transform duration-300"
+                                  onClick={() => setImagePreview(img)}
                                 />
-                                {index === 3 && viewData.mainImages.length > 4 && (
-                                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-bold">
-                                    +{viewData.mainImages.length - 4}
-                                  </div>
-                                )}
+
+                                {/* Remove button overlay */}
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center">
+                                  {removingImages[img] ? (
+                                    <div className="p-2 bg-red-500 rounded-full">
+                                      <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleImageRemove(viewData._id, img)}
+                                      className="opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300 p-2 bg-red-500 rounded-full hover:bg-red-600"
+                                      title="Расмни ўчириш"
+                                      disabled={!user.role === 'admin'}
+                                    >
+                                      <Trash2 className="h-5 w-5 text-white" />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -727,14 +1078,170 @@ export const ProductsPage = () => {
                         )}
                       </div>
 
+                      {/* Upload New Images - Faqat admin uchun */}
+                      {user.role === 'admin' && (
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-600">
+                              Янги расмлар қўшиш
+                            </h3>
+                            {selectedFiles[viewData._id] && (
+                              <button
+                                onClick={() => clearSelectedFiles(viewData._id)}
+                                className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                              >
+                                <X size={12} />
+                                Тозалаш
+                              </button>
+                            )}
+                          </div>
+
+                          {/* File Input Area */}
+                          <div className="relative">
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              onChange={(e) => handleFileSelect(viewData._id, e)}
+                              className="hidden"
+                            />
+
+                            {/* Drag & Drop Area */}
+                            <div
+                              onClick={() => fileInputRef.current?.click()}
+                              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300 hover:border-blue-500 hover:bg-blue-50 ${selectedFiles[viewData._id] ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
+                            >
+                              <div className="space-y-3">
+                                <div className="flex justify-center">
+                                  <div className="p-3 bg-blue-100 rounded-full">
+                                    <Upload className="h-6 w-6 text-blue-600" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-800">
+                                    {selectedFiles[viewData._id]
+                                      ? `${selectedFiles[viewData._id].length} та расм танланди`
+                                      : 'Расмларни юклаш учун босинг'
+                                    }
+                                  </p>
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    PNG, JPG, JPEG (макс. 5MB)
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Local Previews */}
+                            {localImagePreviews[viewData._id] && localImagePreviews[viewData._id].length > 0 && (
+                              <div className="mt-4">
+                                <p className="text-xs font-medium text-gray-600 mb-2">Танланган расмлар:</p>
+                                <div className="grid grid-cols-4 gap-2">
+                                  {localImagePreviews[viewData._id].map((url, index) => (
+                                    <div key={index} className="relative rounded-lg overflow-hidden">
+                                      <img
+                                        src={url}
+                                        alt={`Preview ${index + 1}`}
+                                        className="w-full h-20 object-cover"
+                                      />
+                                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                                      <span className="absolute bottom-1 right-1 text-xs text-white bg-black/50 px-1 rounded">
+                                        {index + 1}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Progress Bar */}
+                            {uploadProgress[viewData._id] && (
+                              <div className="mt-4 space-y-2">
+                                <div className="flex justify-between text-xs text-gray-600">
+                                  <span>Юкланмоқда...</span>
+                                  <span>
+                                    {uploadProgress[viewData._id].completed}/{uploadProgress[viewData._id].total}
+                                  </span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                                    style={{
+                                      width: `${(uploadProgress[viewData._id].completed / uploadProgress[viewData._id].total) * 100}%`
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Upload Button */}
+                          {selectedFiles[viewData._id] && (
+                            <motion.button
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              onClick={() => handleImageUpload(viewData._id, selectedFiles[viewData._id])}
+                              disabled={uploadingImages[viewData._id]}
+                              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3 rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {uploadingImages[viewData._id] ? (
+                                <>
+                                  <Loader2 className="h-5 w-5 animate-spin" />
+                                  {uploadProgress[viewData._id] ? (
+                                    `Юкланмоқда (${uploadProgress[viewData._id].current}/${uploadProgress[viewData._id].total})`
+                                  ) : (
+                                    'Юкланмоқда...'
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="h-5 w-5" />
+                                  {selectedFiles[viewData._id].length} та расмни юклаш
+                                </>
+                              )}
+                            </motion.button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right Column - Product Details */}
+                    <div className="space-y-6">
                       {/* Basic Info */}
                       <div className="space-y-4">
+                        {/* Title */}
+                        <div>
+                          <label className="text-xs font-medium text-gray-600 block mb-1">
+                            Маҳсулот номи
+                          </label>
+                          {user.role === 'admin' ? (
+                            <input
+                              type="text"
+                              value={editing[viewData._id]?.title || viewData.title}
+                              onChange={e => handleChange(viewData._id, 'title', e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-lg font-semibold"
+                            />
+                          ) : (
+                            <h3 className="text-xl font-bold text-gray-800">{viewData.title}</h3>
+                          )}
+                        </div>
+
+                        {/* SKU & Category */}
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">
                               SKU
                             </label>
-                            <p className="font-medium text-gray-800">{viewData.sku}</p>
+                            {user.role === 'admin' ? (
+                              <input
+                                type="text"
+                                value={editing[viewData._id]?.sku || viewData.sku}
+                                onChange={e => handleChange(viewData._id, 'sku', e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                              />
+                            ) : (
+                              <p className="font-medium text-gray-800">{viewData.sku}</p>
+                            )}
                           </div>
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">
@@ -756,6 +1263,7 @@ export const ProductsPage = () => {
                           </div>
                         </div>
 
+                        {/* Gender, Season, Material */}
                         <div className="grid grid-cols-3 gap-3">
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">
@@ -810,34 +1318,12 @@ export const ProductsPage = () => {
                           </div>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Right Column - Details & Stock */}
-                    <div className="space-y-6">
-                      {/* Title */}
-                      <div>
-                        <div className="mb-4">
-                          <label className="text-xs font-medium text-gray-600 block mb-1">
-                            Номи
-                          </label>
-                          {user.role === 'admin' ? (
-                            <input
-                              type="text"
-                              value={editing[viewData._id]?.title || viewData.title}
-                              onChange={e => handleChange(viewData._id, 'title', e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-3 text-lg font-semibold"
-                            />
-                          ) : (
-                            <h3 className="text-xl font-bold text-gray-800">{viewData.title}</h3>
-                          )}
-                        </div>
-                      </div>
 
                       {/* Stock & Status Summary */}
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="rounded-xl p-4 bg-gray-100">
+                        <div className="rounded-xl p-4 bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200">
                           <div className="flex items-center gap-3 mb-2">
-                            <Package size={20} className="text-blue-500" />
+                            <Package size={20} className="text-blue-600" />
                             <div>
                               <p className="text-xs text-gray-600">Умумий дона</p>
                               <p className="text-2xl font-bold text-gray-800">
@@ -853,9 +1339,9 @@ export const ProductsPage = () => {
                           </div>
                         </div>
 
-                        <div className="rounded-xl p-4 bg-gray-100">
+                        <div className="rounded-xl p-4 bg-gradient-to-br from-green-50 to-green-100 border border-green-200">
                           <div className="flex items-center gap-3 mb-2">
-                            <BarChart3 size={20} className="text-green-500" />
+                            <BarChart3 size={20} className="text-green-600" />
                             <div>
                               <p className="text-xs text-gray-600">Сотилган</p>
                               <p className="text-2xl font-bold text-gray-800">
@@ -885,21 +1371,38 @@ export const ProductsPage = () => {
                           />
                         </div>
                       )}
+
+                      {/* QR Code */}
+                      <div className="rounded-xl p-4 bg-gray-50 border border-gray-200">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">QR Код</h4>
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={viewData.qrCode}
+                            alt="QR Code"
+                            className="w-24 h-24"
+                          />
+                          <div>
+                            <p className="text-sm text-gray-600 mb-1">
+                              Ушбу QR код маҳсулотни тез идентификация қилиш учун
+                            </p>
+                            <button
+                              onClick={() => navigator.clipboard.writeText(viewData.sku)}
+                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                            >
+                              SKU ни копия қилиш
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Action Buttons */}
-                {user.role === 'admin' && editing[viewData._id] && (
+                {/* Action Buttons - Faqat edit mode da va admin uchun */}
+                {user.role === 'admin' && isEditMode(viewData._id) && (
                   <div className="sticky bottom-0 border-t border-gray-200 px-4 md:px-6 py-4 rounded-b-2xl flex justify-end gap-3 bg-white">
                     <button
-                      onClick={() => {
-                        setEditing(prev => {
-                          const copy = { ...prev }
-                          delete copy[viewData._id]
-                          return copy
-                        })
-                      }}
+                      onClick={() => handleCancelEditing(viewData._id)}
                       className="px-4 py-2 rounded-lg font-medium transition-colors bg-gray-200 text-gray-800 hover:bg-gray-300"
                     >
                       Бекор қилиш
@@ -946,7 +1449,7 @@ export const ProductsPage = () => {
                 />
                 <button
                   onClick={() => setImagePreview(null)}
-                  className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
+                  className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors"
                 >
                   ✖
                 </button>

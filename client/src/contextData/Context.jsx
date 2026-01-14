@@ -15,9 +15,10 @@ export const ContextProvider = ({ children }) => {
     document.documentElement.classList.toggle('dark', dark)
   }, [dark])
 
-  const setUserToken = token => {
-    Cookies.set('user_token', token)
+  const setUserToken = (token) => {
+    Cookies.set('user_token', token, { expires: 7 })
   }
+
 
   const removeUserToken = () => {
     Cookies.remove('user_token')

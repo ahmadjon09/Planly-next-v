@@ -3,6 +3,7 @@ import cors from 'cors'
 import mongoose from 'mongoose'
 import axios from 'axios'
 import ProductRoutes from './routes/product.js'
+import StatsRoutes from './routes/stats.js'
 import OrderRoutes from './routes/order.js'
 import path from 'path'
 import UserRoutes from './routes/user.js'
@@ -42,6 +43,7 @@ app.get('/api/status', (req, res) => {
 })
 app.get('/api/', (_, res) => res.send('Server is running!'))
 app.use('/api/users', UserRoutes)
+app.use('/api/stats', StatsRoutes)
 app.use('/api/products', ProductRoutes)
 app.use('/api/orders', OrderRoutes)
 app.use('/api/health', getSystemHealth)

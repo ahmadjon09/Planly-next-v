@@ -214,12 +214,13 @@ export const AddNewOrder = () => {
   }, [selectedProducts, scannedProducts, isProcessingScan])
 
   const startScan = async () => {
+    stopScan()
     try {
+      stopScan()
       setScanError('')
       setScanResult('')
       setCameraFullscreen(false)
-      stopScan() // Oldingi streamlarni tozalash
-
+      scannedOnceRef.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "environment",

@@ -24,6 +24,7 @@ import { ContextData } from '../contextData/Context'
 import { motion, AnimatePresence } from 'framer-motion'
 import jsQR from 'jsqr'
 import { scanned } from '../assets/js/saund'
+import Quagga from '@ericblade/quagga2';
 
 export default function AddProductModal({ open, setOpen, mutate }) {
   const { user, dark } = useContext(ContextData)
@@ -151,10 +152,18 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
   // Scanner functions
   const startScan = async () => {
+    scannedRef.current = false;
+    stopScan()
     try {
       setScanError('')
       setScanResult('')
       setCameraFullscreen(false)
+
+      scannedRef.current = false;
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -167,8 +176,10 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       videoRef.current.srcObject = stream
       videoRef.current.setAttribute('playsinline', true)
       await videoRef.current.play()
+
       setScanning(true)
       scanLoop()
+
     } catch (err) {
       console.error('Camera error:', err)
       setScanError('Камера очилмади. Илтимос, рухсат беринг.')
@@ -177,30 +188,30 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
   const stopScan = () => {
     setScanning(false)
+    scannedRef.current = false; // 🔥 MUHIM
+
     if (videoRef.current?.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach(t => {
-        t.stop()
-      })
+      videoRef.current.srcObject.getTracks().forEach(t => t.stop())
       videoRef.current.srcObject = null
     }
+
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = null
     }
   }
 
+
+
+
+
   const scanLoop = () => {
-    if (scannedRef.current) return; // 🔒 1 martadan keyin to‘xtaydi
+    if (scannedRef.current) return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    if (!video || !canvas) {
-      rafRef.current = requestAnimationFrame(scanLoop);
-      return;
-    }
-
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
+    if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
       rafRef.current = requestAnimationFrame(scanLoop);
       return;
     }
@@ -213,41 +224,51 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    try {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    // Quagga ishlatish
+    Quagga.decodeSingle(
+      {
+        src: canvas.toDataURL('image/png'), // yoki to'g'ridan-to'g'ri ImageData bersa ham bo'ladi
+        numOfWorkers: navigator.hardwareConcurrency || 4,
+        decoder: {
+          readers: [
+            'ean_reader',        // EAN-13 + EAN-8
+            'upc_reader',        // UPC-A + UPC-E
+            // 'code_128_reader',   // agar kerak bo'lsa qo'shsa bo'ladi
+          ],
+          multiple: false,
+        },
+        locator: {
+          halfSample: true,
+          patchSize: 'medium',    // "x-small", "small", "medium", "large"
+        },
+      },
+      (result) => {
+        if (result?.codeResult?.code) {
+          scannedRef.current = true;
 
-      const code = jsQR(
-        imageData.data,
-        canvas.width,
-        canvas.height,
-        { inversionAttempts: "dontInvert" } // 🔥 MUHIM
-      );
+          // muvaffaqiyatli o‘qildi
+          const scanSound = new Audio(`data:audio/wav;base64,${scanned}`);
+          scanSound.volume = 1;
+          scanSound.play().catch(() => { });
 
-      if (code?.data) {
-        scannedRef.current = true; // 🔒 LOCK
+          const barcode = result.codeResult.code;
+          setScanResult(barcode);
+          setProductData(prev => ({ ...prev, sku: barcode }));
 
-        const scanSound = new Audio(`data:audio/wav;base64,${scanned}`);
-        scanSound.volume = 1;
-        scanSound.play().catch(() => { });
+          setTimeout(() => {
+            stopScan();
+            setShowScanner(false);
+          }, 500);
 
-        setScanResult(code.data);
-        setProductData(prev => ({ ...prev, sku: code.data }));
+          return;
+        }
 
-        setTimeout(() => {
-          stopScan();
-          setShowScanner(false);
-        }, 500);
-
-        return;
+        // topilmadi → davom etamiz
+        rafRef.current = requestAnimationFrame(scanLoop);
       }
-    } catch (err) {
-      console.error('QR scanning error:', err);
-    }
-
-    rafRef.current = requestAnimationFrame(scanLoop);
+    );
   };
 
 
@@ -656,7 +677,11 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         </div>
                         <button
                           type='button'
-                          onClick={() => setShowScanner(true)}
+                          onClick={() => {
+                            setShowScanner(true)
+                            startScan()
+                          }
+                          }
                           className='flex items-center gap-1 px-3 py-1 text-xs rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors'
                         >
                           <QrCode size={12} />
@@ -1087,7 +1112,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
                         {/* Camera controls */}
                         <div className='absolute bottom-4 right-4 flex items-center gap-2'>
-                          {!scanning && (
+                          {/* {!scanning && (
                             <button
                               onClick={() => startScan()}
                               className='flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-medium transition-all hover:scale-105'
@@ -1095,7 +1120,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                               <Camera className='h-4 w-4' />
                               Сканерни бошлаш
                             </button>
-                          )}
+                          )} */}
                         </div>
                       </div>
 
@@ -1168,7 +1193,8 @@ export default function AddProductModal({ open, setOpen, mutate }) {
             )}
           </AnimatePresence>
         </>
-      )}
-    </AnimatePresence>
+      )
+      }
+    </AnimatePresence >
   )
 }

@@ -46,6 +46,43 @@ const sendBotNotification = async (products) => {
     console.error("Bot хабар юборишда хатолик:", err.message);
   }
 };
+
+const sendBotNotificationV2 = async (products) => {
+  try {
+    const loggedUsers = await Users.find({ isLoggedIn: true }).lean();
+    if (!loggedUsers.length || !products.length) return;
+
+    for (const user of loggedUsers) {
+      if (!user.telegramId) continue;
+
+      let message = `📦 <b>МАҲСУЛОТ ЯНГИЛАНДИ</b>\n\n`;
+
+      products.forEach((product, index) => {
+        message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
+
+        if (product.addedCount) {
+          message += `   ├─ ➕ Қўшилди: ${product.addedCount} дона\n`;
+        }
+
+        message += `   ├─ 📦 Жами: ${product.totalCount} дона\n\n`;
+      });
+
+      message += `🕒 ${new Date().toLocaleString('uz-UZ', {
+        timeZone: 'Asia/Tashkent'
+      })}`;
+
+      await bot.telegram.sendMessage(user.telegramId, message, {
+        parse_mode: "HTML",
+        disable_web_page_preview: true
+      });
+    }
+
+    console.log("Bot хабар юборилди ✅");
+  } catch (err) {
+    console.error("Bot хабар юборишда хатолик:", err.message);
+  }
+};
+
 export const CreateNewProduct = async (req, res) => {
   try {
     const data = req.body;
@@ -72,6 +109,11 @@ export const CreateNewProduct = async (req, res) => {
 
       await existingProduct.save();
 
+      sendBotNotificationV2([{
+        title: existingProduct.title,
+        addedCount: incomingCount,
+        totalCount: existingProduct.count
+      }]);
       return res.status(200).json({
         message: "Маҳсулот миқдори янгиланди ✅",
         product: existingProduct,

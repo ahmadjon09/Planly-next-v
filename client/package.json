@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ericblade/quagga2": "^1.12.1",
     "@reduxjs/toolkit": "^2.6.1",
     "@tailwindcss/vite": "^4.1.17",
     "axios": "^1.8.4",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.22",
+    "baseline-browser-mapping": "^2.9.14",
     "eslint": "^9.9.0",
     "eslint-plugin-react": "^7.35.0",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
