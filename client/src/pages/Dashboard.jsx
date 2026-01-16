@@ -210,7 +210,7 @@ export default function DashboardPage() {
         iconColor = 'text-blue-600',
         size = 'md'
     }) => (
-        <div className={`bg-white rounded-2xl shadow-sm p-${size === 'lg' ? '6' : '5'} border border-gray-200 hover:shadow-md transition-all duration-300 hover:border-blue-200`}>
+        <div className={`bg-white rounded-2xl shadow-sm p-4 border border-gray-200 hover:shadow-md transition-all duration-300 hover:border-blue-200`}>
             <div className="flex items-center justify-between mb-4">
                 <div className={`p-3 rounded-xl ${loading ? 'animate-pulse bg-gray-200' : bgColor}`}>
                     {loading ? (
