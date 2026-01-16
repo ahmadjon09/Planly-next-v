@@ -29,7 +29,9 @@ import {
   Upload,
   ImageIcon,
   Edit2,
-  UserPlus
+  UserPlus,
+  Flashlight,
+  FlashlightOff
 } from 'lucide-react'
 import jsQR from 'jsqr'
 import Fetch from '../middlewares/fetcher'
@@ -55,7 +57,7 @@ export const AddNewOrder = () => {
   const [message, setMessage] = useState(null)
   const [showClientsList, setShowClientsList] = useState(false)
   const [isEditingClient, setIsEditingClient] = useState(false)
-
+  const [flashlightOn, setFlashlightOn] = useState(false)
   // Scanner states
   const [showScanner, setShowScanner] = useState(false)
   const [scanning, setScanning] = useState(false)
@@ -73,6 +75,7 @@ export const AddNewOrder = () => {
   const fileInputRef = useRef(null)
   const lastScannedRef = useRef(null)
   const scannedOnceRef = useRef(false)
+  const streamRef = useRef(null);
 
   // Client data
   const [clientData, setClientData] = useState({
@@ -185,12 +188,6 @@ export const AddNewOrder = () => {
             text: `✅ ${productTypeData.title} қўшилди (${productTypeData.model})`
           })
         }
-
-        setTimeout(() => {
-          setShowScanner(false);
-          stopScan();
-        }, 1000);
-
       } else {
         throw new Error('Махсулот маълумотлари топилмади')
       }
@@ -228,7 +225,7 @@ export const AddNewOrder = () => {
           height: { ideal: 1080 }
         },
       })
-
+      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         videoRef.current.setAttribute('playsinline', true)
@@ -255,65 +252,113 @@ export const AddNewOrder = () => {
     }
   }
 
+
+  const toggleFlashlight = useCallback(async () => {
+    if (!streamRef.current) return
+
+    try {
+      const videoTrack = streamRef.current.getVideoTracks()[0]
+      if (videoTrack && 'applyConstraints' in videoTrack) {
+        await videoTrack.applyConstraints({
+          advanced: [{ torch: !flashlightOn }]
+        })
+        setFlashlightOn(!flashlightOn)
+      }
+    } catch (err) {
+      console.error('Flashlight error:', err)
+      setMessage({
+        type: 'error',
+        text: 'Фонарик қўллаб-қувватланмайди'
+      })
+    }
+  }, [flashlightOn])
+
   // Scan loop - YANGILANDI
   useEffect(() => {
     if (!scanning || !showScanner) return;
 
-    scannedOnceRef.current = false; // 🔁 har ochilganda reset
+    const scanSound = new Audio(`data:audio/wav;base64,${scanned}`);
+    scanSound.volume = 1;
 
-    const scanSound = new Audio(`data:audio/wav;base64,${scanned}`)
     let lastScanTime = 0;
-    const SCAN_COOLDOWN = 2000;
+    const SCAN_COOLDOWN = 1000;
+    let lastScannedData = null;
 
     const scanFrame = () => {
-      if (scannedOnceRef.current) return; // 🔒 1 martalik lock
-
       const video = videoRef.current;
       const canvas = canvasRef.current;
 
-      if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+      if (!video || !canvas || video.videoWidth === 0) {
         rafRef.current = requestAnimationFrame(scanFrame);
         return;
       }
 
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        rafRef.current = requestAnimationFrame(scanFrame);
+        return;
+      }
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // 🔍 ZOOM + CENTER CROP
+      const zoom = 1.6;
+      const sw = canvas.width / zoom;
+      const sh = canvas.height / zoom;
+      const sx = (canvas.width - sw) / 2;
+      const sy = (canvas.height - sh) / 2;
+
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 
       try {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "attemptBoth"
+        });
 
         if (code?.data) {
           const scannedData = code.data.trim();
           const now = Date.now();
 
-          if (
-            !scannedOnceRef.current &&
-            scannedData !== lastScannedRef.current &&
-            now - lastScanTime > SCAN_COOLDOWN
-          ) {
-            scannedOnceRef.current = true; // 🔒 LOCK
-            lastScannedRef.current = scannedData;
-            lastScanTime = now;
-
-            setScanResult(scannedData);
-            scanSound.volume = 1;
-            scanSound.play().catch(() => { });
-
-            stopScan();
-            setShowScanner(false);
-
-            handleScannerSearch(scannedData);
+          // 🔑 Cooldown tekshirish
+          if (scannedData === lastScannedData && now - lastScanTime < SCAN_COOLDOWN) {
+            rafRef.current = requestAnimationFrame(scanFrame);
             return;
           }
+
+          lastScanTime = now;
+          lastScannedData = scannedData;
+
+          // 🔊 Ovoz
+          scanSound.currentTime = 0;
+          scanSound.play().catch(() => { });
+
+          setScanResult(scannedData);
+
+          handleScannerSearch(scannedData).then(fetchedProduct => {
+            if (!fetchedProduct) return;
+
+            setSelectedProducts(prev =>
+              prev.map(p => {
+                if (p._id === fetchedProduct._id) {
+                  const newQty = Math.min(
+                    (p.quantity || 0) + 1,
+                    fetchedProduct.count // max count backenddan
+                  );
+                  return { ...p, quantity: newQty };
+                }
+                return p;
+              })
+            );
+          });
         }
       } catch (err) {
-        console.error('QR scanning error:', err);
+        console.error("QR scanning error:", err);
       }
 
-      if (scanning && !scannedOnceRef.current) {
+      // 🔁 Scanner doimiy ishlaydi
+      if (scanning && showScanner) {
         rafRef.current = requestAnimationFrame(scanFrame);
       }
     };
@@ -321,11 +366,10 @@ export const AddNewOrder = () => {
     rafRef.current = requestAnimationFrame(scanFrame);
 
     return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, [scanning, showScanner, handleScannerSearch]);
+
 
 
   // Camera to'liq ekran rejimi
@@ -374,9 +418,9 @@ export const AddNewOrder = () => {
 
   // Cleanup
   useEffect(() => {
-    return () => {
-      stopScan()
-    }
+    startScan()
+    setShowScanner(true)
+    setScanning(true)
   }, [])
 
 
@@ -713,162 +757,6 @@ export const AddNewOrder = () => {
 
 
         <form onSubmit={handleSubmit} className='space-y-8'>
-          {/* Mijoz ma'lumotlari */}
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <div className='flex flex-wrap gap-2 items-center justify-between mb-6'>
-              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                <Users size={20} className='text-blue-500' />
-                Мижоз маълумотлари
-              </h3>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type='button'
-                  onClick={() => setShowClientsList(!showClientsList)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${showClientsList
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                    }`}
-                >
-                  <User size={16} />
-                  {showClientsList ? 'Янги мижоз' : 'Мавжуд мижоз'}
-                </button>
-
-                {clientData.clientId && (
-                  <button
-                    type='button'
-                    onClick={() => setIsEditingClient(!isEditingClient)}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl transition-all duration-200"
-                  >
-                    <Edit2 size={16} />
-                    Таҳрирлаш
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {showClientsList ? (
-              <div className="space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="text"
-                    value={clientSearchQuery}
-                    onChange={(e) => setClientSearchQuery(e.target.value)}
-                    placeholder="Исм, телефон ёки манзил бўйича излаш..."
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                    autoFocus
-                  />
-                </div>
-
-                {ordersLoading ? (
-                  <div className="text-center py-8">
-                    <Loader2 className="animate-spin mx-auto mb-2 text-blue-600" size={24} />
-                    <p className="text-gray-600">Мижозлар юкланмоқда...</p>
-                  </div>
-                ) : filteredClients.length > 0 ? (
-                  <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-                    {filteredClients.map((client) => (
-                      <motion.div
-                        key={client._id}
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={`p-4 border border-gray-200 rounded-xl cursor-pointer transition-all hover:shadow-md ${clientData.clientId === client._id
-                          ? 'bg-blue-50 border-blue-200'
-                          : 'bg-gray-50 hover:bg-white'
-                          }`}
-                        onClick={() => handleSelectClient(client)}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="font-semibold text-gray-800">{client.fullName}</div>
-                          <div className="text-sm text-gray-500">
-                            {client.totalOrders} та буюртма
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                          <div className="flex items-center gap-1">
-                            <Phone size={14} />
-                            <span>{client.phoneNumber}</span>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-200">
-                    <User className="mx-auto mb-3 text-gray-400" size={32} />
-                    <p className="font-medium text-gray-600">Мижозлар топилмади</p>
-                    <p className="text-sm text-gray-500 mt-1">Янги мижоз қўшиш учун тугмани босинг</p>
-                    <button
-                      type="button"
-                      onClick={handleAddNewClient}
-                      className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all"
-                    >
-                      <UserPlus size={16} className="inline mr-2" />
-                      Янги мижоз
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Исм <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={clientData.name}
-                      onChange={(e) => handleClientChange('name', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                      placeholder="Тўлиқ исм"
-                      disabled={clientData.clientId && !isEditingClient}
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Телефон <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      value={clientData.phoneNumber}
-                      onChange={(e) => handleClientChange('phoneNumber', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                      placeholder="+998 XX XXX XX XX"
-                      disabled={clientData.clientId && !isEditingClient}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-                  <div className="text-sm text-gray-600">
-                    {clientData.clientId ? (
-                      <span className="text-green-600">✅ Мавжуд мижоз танланди</span>
-                    ) : (
-                      <span className="text-blue-600">🆕 Янги мижоз қўшилмоқда</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {clientData.clientId && (
-                      <button
-                        type="button"
-                        onClick={handleClearClient}
-                        className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xl transition-all duration-200"
-                      >
-                        <X size={16} />
-                        Тозалаш
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Camera Scanner Section */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
             <div className='flex flex-wrap gap-2 items-center justify-between mb-6'>
@@ -1078,6 +966,162 @@ export const AddNewOrder = () => {
             )}
           </AnimatePresence>
 
+          {/* Mijoz ma'lumotlari */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className='flex flex-wrap gap-2 items-center justify-between mb-6'>
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <Users size={20} className='text-blue-500' />
+                Мижоз маълумотлари
+              </h3>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type='button'
+                  onClick={() => setShowClientsList(!showClientsList)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${showClientsList
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                    }`}
+                >
+                  <User size={16} />
+                  {showClientsList ? 'Янги мижоз' : 'Мавжуд мижоз'}
+                </button>
+
+                {clientData.clientId && (
+                  <button
+                    type='button'
+                    onClick={() => setIsEditingClient(!isEditingClient)}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl transition-all duration-200"
+                  >
+                    <Edit2 size={16} />
+                    Таҳрирлаш
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {showClientsList ? (
+              <div className="space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                  <input
+                    type="text"
+                    value={clientSearchQuery}
+                    onChange={(e) => setClientSearchQuery(e.target.value)}
+                    placeholder="Исм, телефон ёки манзил бўйича излаш..."
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                    autoFocus
+                  />
+                </div>
+
+                {ordersLoading ? (
+                  <div className="text-center py-8">
+                    <Loader2 className="animate-spin mx-auto mb-2 text-blue-600" size={24} />
+                    <p className="text-gray-600">Мижозлар юкланмоқда...</p>
+                  </div>
+                ) : filteredClients.length > 0 ? (
+                  <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                    {filteredClients.map((client) => (
+                      <motion.div
+                        key={client._id}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`p-4 border border-gray-200 rounded-xl cursor-pointer transition-all hover:shadow-md ${clientData.clientId === client._id
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-gray-50 hover:bg-white'
+                          }`}
+                        onClick={() => handleSelectClient(client)}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="font-semibold text-gray-800">{client.fullName}</div>
+                          <div className="text-sm text-gray-500">
+                            {client.totalOrders} та буюртма
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <div className="flex items-center gap-1">
+                            <Phone size={14} />
+                            <span>{client.phoneNumber}</span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-200">
+                    <User className="mx-auto mb-3 text-gray-400" size={32} />
+                    <p className="font-medium text-gray-600">Мижозлар топилмади</p>
+                    <p className="text-sm text-gray-500 mt-1">Янги мижоз қўшиш учун тугмани босинг</p>
+                    <button
+                      type="button"
+                      onClick={handleAddNewClient}
+                      className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all"
+                    >
+                      <UserPlus size={16} className="inline mr-2" />
+                      Янги мижоз
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Исм <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={clientData.name}
+                      onChange={(e) => handleClientChange('name', e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      placeholder="Тўлиқ исм"
+                      disabled={clientData.clientId && !isEditingClient}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Телефон <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={clientData.phoneNumber}
+                      onChange={(e) => handleClientChange('phoneNumber', e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      placeholder="+998 XX XXX XX XX"
+                      disabled={clientData.clientId && !isEditingClient}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                  <div className="text-sm text-gray-600">
+                    {clientData.clientId ? (
+                      <span className="text-green-600">✅ Мавжуд мижоз танланди</span>
+                    ) : (
+                      <span className="text-blue-600">🆕 Янги мижоз қўшилмоқда</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {clientData.clientId && (
+                      <button
+                        type="button"
+                        onClick={handleClearClient}
+                        className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xl transition-all duration-200"
+                      >
+                        <X size={16} />
+                        Тозалаш
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Submit buttons */}
           <div className='flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200'>
             <button
@@ -1179,7 +1223,7 @@ export const AddNewOrder = () => {
                   <div className='relative rounded-xl overflow-hidden bg-black'>
                     <video
                       ref={videoRef}
-                      className={`w-full ${cameraFullscreen ? 'h-[calc(100vh-180px)]' : 'h-[500px]'} object-cover`}
+                      className={`w-full ${cameraFullscreen ? 'h-[calc(100vh-180px)]' : 'h-[70vh]'} object-cover`}
                       playsInline
                       autoPlay
                       muted
@@ -1208,6 +1252,12 @@ export const AddNewOrder = () => {
                         </div>
                       </>
                     )}
+                    <button
+                      onClick={toggleFlashlight} // <-- shu o‘zgardi
+                      className='absolute bottom-10 right-10 text-white bg-green-500 p-4 rounded-2xl'
+                    >
+                      {flashlightOn ? <Flashlight /> : <FlashlightOff />}
+                    </button>
 
                     {/* Camera controls */}
                     <div className='absolute bottom-4 right-4 flex items-center gap-2'>
@@ -1313,9 +1363,6 @@ const ProductItem = ({
               <div className="font-bold truncate mr-2 text-lg text-gray-800">
                 {item.title}
               </div>
-              <div className="text-sm mt-1 text-gray-500">
-                Категория: {item.category} • Модель: <code className="px-2 py-1 rounded bg-gray-100 text-gray-800">{item.model}</code>
-              </div>
             </div>
             <button
               type='button'
@@ -1326,41 +1373,7 @@ const ProductItem = ({
               <Trash2 size={18} />
             </button>
           </div>
-
-          <div className='flex flex-wrap items-center gap-4 text-sm mb-3'>
-            {item.color && item.color !== '--' && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600">Ранг:</span>
-                <span className="font-medium px-2 py-1 rounded bg-gray-100 text-gray-800">
-                  {item.color}
-                </span>
-              </div>
-            )}
-
-            {item.size && item.size !== '--' && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600">Ўлчам:</span>
-                <span className="font-medium px-2 py-1 rounded bg-gray-100 text-gray-800">
-                  {item.size}
-                </span>
-              </div>
-            )}
-
-            {item.style && item.style !== '--' && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600">Стиль:</span>
-                <span className="font-medium px-2 py-1 rounded bg-gray-100 text-gray-800">
-                  {item.style}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-gray-600">Бирлик:</span>
-              <span className="font-medium text-gray-800">{item.unit}</span>
-            </div>
+          <div className="flex flex-wrap items-center gap-4">
             {item.count > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-gray-600">Омборда:</span>

@@ -53,9 +53,11 @@ export const ProductsPage = () => {
   const [loading, setLoading] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
-  const [imagePreview, setImagePreview] = useState(null)
+  const [previewImages, setPreviewImages] = useState([]);
+  const [activeIndex, setActiveIndex] = useState(0);
 
-  // Image management states
+
+  // Rasm boshqarish state'lari
   const [uploadingImages, setUploadingImages] = useState({})
   const [removingImages, setRemovingImages] = useState({})
   const [localImagePreviews, setLocalImagePreviews] = useState({})
@@ -89,14 +91,6 @@ export const ProductsPage = () => {
     revalidateOnReconnect: false,
     keepPreviousData: true
   })
-
-  const formatNumber = (num) => {
-    if (num === undefined || num === null) return "0"
-    if (!Number.isInteger(num)) {
-      return (Math.round(num * 10) / 10).toLocaleString('uz-UZ')
-    }
-    return num.toLocaleString('uz-UZ')
-  }
 
   const calculateTotalStock = (product) => {
     return product.count || 0
@@ -171,7 +165,7 @@ export const ProductsPage = () => {
     }
   }
 
-  // Cancel editing function
+  // Tahriqlashni bekor qilish funksiyasi
   const handleCancelEditing = (id) => {
     setEditing(prev => {
       const copy = { ...prev }
@@ -216,7 +210,7 @@ export const ProductsPage = () => {
     }
   }
 
-  // Image Upload Handler - ImgBB ga upload qilish
+  // Rasm Yuklash Handler - ImgBB ga yuklash
   const handleImageUpload = async (productId, files) => {
     try {
       setUploadingImages(prev => ({ ...prev, [productId]: true }))
@@ -297,7 +291,7 @@ export const ProductsPage = () => {
           }))
         }
 
-        // Clear local previews
+        // Local previewlarni tozalash
         if (localImagePreviews[productId]) {
           localImagePreviews[productId].forEach(url => URL.revokeObjectURL(url))
           setLocalImagePreviews(prev => {
@@ -336,7 +330,7 @@ export const ProductsPage = () => {
     }
   }
 
-  // Image Remove Handler - local state'da o'chirish
+  // Rasm o'chirish Handler - local state'da o'chirish
   const handleImageRemove = (productId, imageUrl) => {
     try {
       setRemovingImages(prev => ({ ...prev, [imageUrl]: true }))
@@ -398,14 +392,14 @@ export const ProductsPage = () => {
     }
   };
 
-  // File selection handler with preview
+  // Fayl tanlash handler bilan preview
   const handleFileSelect = (productId, event) => {
     const files = event.target.files
     if (!files.length) return
 
     setSelectedFiles(prev => ({ ...prev, [productId]: files }))
 
-    // Create preview URLs
+    // Preview URL'larini yaratish
     const previewUrls = []
     for (let i = 0; i < Math.min(files.length, 4); i++) {
       previewUrls.push(URL.createObjectURL(files[i]))
@@ -417,9 +411,9 @@ export const ProductsPage = () => {
     }))
   }
 
-  // Clear selected files
+  // Tanlangan fayllarni tozalash
   const clearSelectedFiles = (productId) => {
-    // Revoke object URLs
+    // Object URL'larni tozalash
     if (localImagePreviews[productId]) {
       localImagePreviews[productId].forEach(url => URL.revokeObjectURL(url))
     }
@@ -449,18 +443,42 @@ export const ProductsPage = () => {
   const products = data?.data?.data || []
   const pagination = data?.data?.pagination || {}
 
+  // Tarjimalar
   const categories = [
-    "sneakers", "boots", "heels", "sandals", "slippers", "shoes", "other"
+    { value: 'sneakers', label: 'Сникерс' },
+    { value: 'boots', label: 'Этик' },
+    { value: 'heels', label: 'Каблук' },
+    { value: 'sandals', label: 'Сандал' },
+    { value: 'slippers', label: 'Тапоқ' },
+    { value: 'shoes', label: 'Оёқ кийим' },
+    { value: 'other', label: 'Бошқа' }
   ]
 
-  const genders = ["men", "women", "kids", "unisex"]
+  const genders = [
+    { value: 'men', label: 'Эркак' },
+    { value: 'women', label: 'Аёл' },
+    { value: 'kids', label: 'Болалар' },
+    { value: 'unisex', label: 'Унисекс' }
+  ]
 
-  const seasons = ["summer", "winter", "spring", "autumn", "all"]
+  const seasons = [
+    { value: 'summer', label: 'Ёз' },
+    { value: 'winter', label: 'Қиш' },
+    { value: 'spring', label: 'Баҳор' },
+    { value: 'autumn', label: 'Күз' },
+    { value: 'all', label: 'Барча фасл' }
+  ]
 
   // Edit mode'ni tekshirish
   const isEditMode = (productId) => {
     return !!(editing[productId] || imageChanges[productId])
   }
+
+  const openPreview = (images, index = 0) => {
+    setPreviewImages(images);
+    setActiveIndex(index);
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4 md:p-6 transition-colors duration-300">
@@ -524,7 +542,7 @@ export const ProductsPage = () => {
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none"
               >
                 <option value="title">Номи бўйича</option>
-                <option value="sku">SKU бўйича</option>
+                <option value="sku">АРТ бўйича</option>
               </select>
             </div>
 
@@ -539,8 +557,8 @@ export const ProductsPage = () => {
                 >
                   <option value="">Барча категориялар</option>
                   {categories.map(cat => (
-                    <option key={cat} value={cat}>
-                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                    <option key={cat.value} value={cat.value}>
+                      {cat.label}
                     </option>
                   ))}
                 </select>
@@ -590,130 +608,8 @@ export const ProductsPage = () => {
           </div>
         ) : (
           <>
-            {/* Mobile View - Cards */}
-            <div className="block lg:hidden">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4"
-              >
-                {products.map((product, index) => (
-                  <motion.div
-                    key={product._id}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="rounded-2xl shadow-lg relative border overflow-hidden bg-white border-gray-200 p-4"
-                  >
-                    {calculateTotalStock(product) == 0 && (
-                      <div className="w-[200px] flex items-center justify-center h-[30px] bg-red-600 absolute -left-13 top-10 -rotate-45 z-30">
-                        <p className="font-bold text-sm text-white uppercase animate-bouncecd cli">мавжуд эмас</p>
-                      </div>
-                    )}
-
-                    {/* Product Image */}
-                    <div className="mb-4">
-                      {product.mainImages && product.mainImages.length > 0 ? (
-                        <div className="relative h-48 rounded-xl overflow-hidden">
-                          <img
-                            onClick={() => setImagePreview(product.mainImages)}
-                            src={product.mainImages[0]}
-                            alt={product.title}
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded-full">
-                            {product.mainImages.length} фото
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="h-48 rounded-xl bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
-                          <ImageIcon className="h-12 w-12 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Product Info */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-bold text-lg mb-1 text-gray-800">
-                            {product.title}
-                          </h3>
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                              {product.category}
-                            </span>
-                            <span className="px-2 py-1 rounded-full bg-purple-100 text-purple-800">
-                              {product.gender}
-                            </span>
-                          </div>
-                        </div>
-                        <img className="w-10 h-10" src={product.qrCode} alt="qrcode" />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <p className="text-gray-600 text-xs">SKU</p>
-                          <p className="font-medium text-gray-800">{product.sku}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600 text-xs">Умумий дона</p>
-                          <p className="font-medium text-gray-800">
-                            {calculateTotalStock(product)} дона
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600 text-xs">Сотилган</p>
-                          <p className="font-medium text-gray-800">
-                            {product.sold || 0} дона
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600 text-xs">Ҳолат</p>
-                          <p className="font-medium text-gray-800">
-                            <span className={`inline-flex items-center gap-1 ${product.count > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {product.count > 0 ? (
-                                <>
-                                  <CheckCircle size={12} />
-                                  Мавжуд
-                                </>
-                              ) : (
-                                <>
-                                  <XCircle size={12} />
-                                  Тугаган
-                                </>
-                              )}
-                            </span>
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex gap-2 pt-3 border-t border-gray-200">
-                        <button
-                          onClick={() => setViewData(product)}
-                          className="flex-1 bg-blue-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
-                        >
-                          <Eye size={16} className="inline mr-1" />
-                          Кўриш
-                        </button>
-                        <button
-                          onClick={() => handleOpenHistory(product._id)}
-                          className="flex-1 bg-green-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
-                        >
-                          <BarChart3 size={16} className="inline mr-1" />
-                          Тарих
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </motion.div>
-            </div>
-
-            {/* Desktop View - Table */}
-            <div className="hidden lg:block">
+            {/* Destop */}
+            <div className='hidden md:block'>
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -754,19 +650,16 @@ export const ProductsPage = () => {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
-                          className="hover:bg-gray-50"
+                          className={`hover:bg-gray-50 cursor-pointer ${product.count == 0 ? "bg-red-300 hover:bg-red-200" : ""}`}
                         >
                           {/* Product Info */}
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               {product.mainImages && product.mainImages.length > 0 ? (
                                 <div
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setImagePreview(product.mainImages)
-                                  }}
                                   className="relative h-12 w-12 rounded-lg overflow-hidden">
                                   <img
+                                    onClick={() => openPreview(product.mainImages, 0)}
                                     src={product.mainImages[0]}
                                     alt={product.title}
                                     className="w-full h-full object-cover cursor-pointer"
@@ -777,24 +670,25 @@ export const ProductsPage = () => {
                                   <ImageIcon className="h-6 w-6 text-gray-400" />
                                 </div>
                               )}
+
                               <div>
                                 <p className="font-semibold text-gray-800">
                                   {product.title}
                                 </p>
                                 <p className="text-sm text-gray-600">
-                                  SKU: {product.sku}
+                                  АРТ: {product.sku}
                                 </p>
                                 <p className="text-xs text-gray-600">
-                                  {product.gender} • {product.season}
+                                  {genders.find(g => g.value === product.gender)?.label || product.gender} • {seasons.find(s => s.value === product.season)?.label || product.season}
                                 </p>
                               </div>
                             </div>
                           </td>
 
                           {/* Category */}
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4" >
                             <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {product.category}
+                              {categories.find(c => c.value === product.category)?.label || product.category}
                             </span>
                           </td>
 
@@ -850,14 +744,206 @@ export const ProductsPage = () => {
                                 <Eye size={16} />
                               </motion.button>
 
+                              {user.role === 'admin' && (
+                                <>
+                                  <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => setDeleteConfirm(product)}
+                                    className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition-colors"
+                                    title="Ўчириш"
+                                  >
+                                    <Trash2 size={16} />
+                                  </motion.button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {products.length === 0 && (
+                  <div className="text-center py-12">
+                    <Boxes size={48} className="mx-auto mb-4 text-gray-300" />
+                    <h3 className="text-lg font-semibold mb-2 text-gray-600">
+                      Маҳсулотлар топилмади
+                    </h3>
+                    <p className="text-gray-600 text-sm">
+                      {search || category || searchDate
+                        ? 'Қидирув шартларингизга мос келувчи маҳсулотлар топилмади'
+                        : 'Ҳали маҳсулот қўшилмаган'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Pagination */}
+                {pagination.totalPages > 1 && (
+                  <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                      <div className="text-sm text-gray-600">
+                        Кўрсатилган: {(page - 1) * 50 + 1}-{Math.min(page * 50, pagination.total)}/{pagination.total}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handlePageChange(page - 1)}
+                          disabled={page <= 1}
+                          className={`p-2 rounded-lg ${page <= 1
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'hover:bg-gray-200'
+                            } text-gray-800`}
+                        >
+                          <ChevronLeft size={20} />
+                        </button>
+
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                            let pageNum
+                            if (pagination.totalPages <= 5) {
+                              pageNum = i + 1
+                            } else if (page <= 3) {
+                              pageNum = i + 1
+                            } else if (page >= pagination.totalPages - 2) {
+                              pageNum = pagination.totalPages - 4 + i
+                            } else {
+                              pageNum = page - 2 + i
+                            }
+
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => handlePageChange(pageNum)}
+                                className={`w-10 h-10 rounded-lg flex items-center justify-center ${page === pageNum
+                                  ? 'bg-blue-500 text-white'
+                                  : 'hover:bg-gray-200 text-gray-800'
+                                  }`}
+                              >
+                                {pageNum}
+                              </button>
+                            )
+                          })}
+                        </div>
+
+                        <button
+                          onClick={() => handlePageChange(page + 1)}
+                          disabled={page >= pagination.totalPages}
+                          className={`p-2 rounded-lg ${page >= pagination.totalPages
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'hover:bg-gray-200'
+                            } text-gray-800`}
+                        >
+                          <ChevronRight size={20} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </div>
+
+            {/* Mobile */}
+            <div className='block md:hidden'>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="rounded-2xl shadow-lg overflow-hidden border bg-white border-gray-200"
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gradient-to-r from-gray-100 to-gray-200">
+                      <tr>
+                        <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
+                          Маҳсулот
+                        </th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
+                          Омбор
+                        </th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
+                          Сотилган
+                        </th>
+                        <th className="px-6 py-4 text-center text-sm font-semibold uppercase tracking-wider">
+                          Амаллар
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {products.map((product, index) => (
+                        <motion.tr
+                          key={product._id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          className={`hover:bg-gray-50 cursor-pointer ${product.count == 0 ? "bg-red-300 hover:bg-red-200" : ""}`}
+                        >
+                          {/* Product Info */}
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              {product.mainImages && product.mainImages.length > 0 ? (
+                                <div
+                                  className="relative h-12 w-12 rounded-lg overflow-hidden">
+                                  <img
+                                    onClick={() => openPreview(product.mainImages, 0)}
+                                    src={product.mainImages[0]}
+                                    alt={product.title}
+                                    className="w-full h-full object-cover cursor-pointer"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
+                                  <ImageIcon className="h-6 w-6 text-gray-400" />
+                                </div>
+                              )}
+
+                              <div>
+                                <p className="font-semibold text-gray-800">
+                                  {product.title}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  АРТ: {product.sku}
+                                </p>
+                                <p className="text-xs text-gray-600">
+                                  {genders.find(g => g.value === product.gender)?.label || product.gender} • {seasons.find(s => s.value === product.season)?.label || product.season}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Stock */}
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2 min-w-[100px]">
+                              <Package size={16} className="text-gray-600" />
+                              <span className="font-semibold text-gray-800">
+                                {product.count} дона
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Sold */}
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <BarChart3 size={16} className="text-green-500" />
+                              <span className="font-semibold text-gray-800">
+                                {product.sold || 0} дона
+                              </span>
+                            </div>
+                          </td>
+
+
+                          {/* Actions */}
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-center gap-2">
                               <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
-                                onClick={() => handleOpenHistory(product._id)}
-                                className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 transition-colors"
-                                title="Тарих"
+                                onClick={() => setViewData(product)}
+                                className="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 transition-colors"
+                                title="Кўриш"
                               >
-                                <BarChart3 size={16} />
+                                <Eye size={16} />
                               </motion.button>
 
                               {user.role === 'admin' && (
@@ -960,7 +1046,8 @@ export const ProductsPage = () => {
               </motion.div>
             </div>
           </>
-        )}
+        )
+        }
 
         {/* Modals */}
         <AddProductModal open={open} setOpen={setOpen} mutate={mutate} />
@@ -1015,7 +1102,7 @@ export const ProductsPage = () => {
                     }}
                     className="text-gray-500 hover:text-black transition p-1 rounded-full hover:bg-gray-100"
                   >
-                    ✖
+                    <X />
                   </button>
                 </div>
 
@@ -1226,11 +1313,11 @@ export const ProductsPage = () => {
                           )}
                         </div>
 
-                        {/* SKU & Category */}
+                        {/* АРТ & Category */}
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">
-                              SKU
+                              АРТ
                             </label>
                             {user.role === 'admin' ? (
                               <input
@@ -1254,11 +1341,13 @@ export const ProductsPage = () => {
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                               >
                                 {categories.map(cat => (
-                                  <option key={cat} value={cat}>{cat}</option>
+                                  <option key={cat.value} value={cat.value}>{cat.label}</option>
                                 ))}
                               </select>
                             ) : (
-                              <p className="font-medium text-gray-800">{viewData.category}</p>
+                              <p className="font-medium text-gray-800">
+                                {categories.find(c => c.value === viewData.category)?.label || viewData.category}
+                              </p>
                             )}
                           </div>
                         </div>
@@ -1276,11 +1365,13 @@ export const ProductsPage = () => {
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                               >
                                 {genders.map(g => (
-                                  <option key={g} value={g}>{g}</option>
+                                  <option key={g.value} value={g.value}>{g.label}</option>
                                 ))}
                               </select>
                             ) : (
-                              <p className="font-medium text-gray-800">{viewData.gender}</p>
+                              <p className="font-medium text-gray-800">
+                                {genders.find(g => g.value === viewData.gender)?.label || viewData.gender}
+                              </p>
                             )}
                           </div>
                           <div>
@@ -1294,11 +1385,13 @@ export const ProductsPage = () => {
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                               >
                                 {seasons.map(season => (
-                                  <option key={season} value={season}>{season}</option>
+                                  <option key={season.value} value={season.value}>{season.label}</option>
                                 ))}
                               </select>
                             ) : (
-                              <p className="font-medium text-gray-800">{viewData.season}</p>
+                              <p className="font-medium text-gray-800">
+                                {seasons.find(s => s.value === viewData.season)?.label || viewData.season}
+                              </p>
                             )}
                           </div>
                           <div>
@@ -1333,8 +1426,8 @@ export const ProductsPage = () => {
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-gray-600">Ҳолат</span>
-                            <span className={`font-semibold ${viewData.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
-                              {viewData.isAvailable ? 'Мавжуд' : 'Тугаган'}
+                            <span className={`font-semibold ${viewData.count != 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {viewData.count != 0 ? 'Мавжуд' : 'Тугаган'}
                             </span>
                           </div>
                         </div>
@@ -1349,8 +1442,8 @@ export const ProductsPage = () => {
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-gray-600">SKU</span>
+                          <div className="flex flex-wrap items-center justify-between">
+                            <span className="text-sm text-gray-600">АРТ:</span>
                             <span className="font-semibold">{viewData.sku}</span>
                           </div>
                         </div>
@@ -1389,7 +1482,7 @@ export const ProductsPage = () => {
                               onClick={() => navigator.clipboard.writeText(viewData.sku)}
                               className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
                             >
-                              SKU ни копия қилиш
+                              АРТ ни копия қилиш
                             </button>
                           </div>
                         </div>
@@ -1428,35 +1521,68 @@ export const ProductsPage = () => {
 
         {/* Image Preview Modal */}
         <AnimatePresence>
-          {imagePreview && (
+          {previewImages.length > 0 && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setImagePreview(null)}
+              onClick={() => setPreviewImages([])}
               className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4"
             >
               <motion.div
                 initial={{ scale: 0.9 }}
                 animate={{ scale: 1 }}
                 exit={{ scale: 0.9 }}
-                className="relative max-w-4xl max-h-[90vh]"
+                onClick={(e) => e.stopPropagation()}
+                className="relative max-w-4xl max-h-[80vh] flex items-center"
               >
+                {/* PREV */}
+                {previewImages.length > 1 && (
+                  <button
+                    onClick={() =>
+                      setActiveIndex((prev) =>
+                        prev === 0 ? previewImages.length - 1 : prev - 1
+                      )
+                    }
+                    className="absolute left-[-60px] text-white text-3xl bg-black/50 w-12 h-12 rounded-full hover:bg-black/70"
+                  >
+                    ‹
+                  </button>
+                )}
+
+                {/* IMAGE */}
                 <img
-                  src={imagePreview}
+                  src={previewImages[activeIndex]}
                   alt="Preview"
-                  className="w-full h-full object-contain rounded-lg"
+                  className="max-w-4xl max-h-[80vh] object-contain rounded-lg"
                 />
+
+                {/* NEXT */}
+                {previewImages.length > 1 && (
+                  <button
+                    onClick={() =>
+                      setActiveIndex((prev) =>
+                        prev === previewImages.length - 1 ? 0 : prev + 1
+                      )
+                    }
+                    className="absolute right-[-60px] text-white text-3xl bg-black/50 w-12 h-12 rounded-full hover:bg-black/70"
+                  >
+                    ›
+                  </button>
+                )}
+
+                {/* CLOSE */}
                 <button
-                  onClick={() => setImagePreview(null)}
-                  className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors"
+                  onClick={() => setPreviewImages([])}
+                  className="absolute -top-10 -right-10 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
                 >
-                  ✖
+                  <X />
                 </button>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
+
 
         {/* Delete Confirmation Modal */}
         <AnimatePresence>
@@ -1513,7 +1639,7 @@ export const ProductsPage = () => {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-    </div>
+      </div >
+    </div >
   )
 }

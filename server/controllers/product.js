@@ -25,7 +25,6 @@ const sendBotNotification = async (products) => {
       });
 
       // Footer qismi
-      message += `📊 <i>Умумий қўшилган маҳсулотлар: ${products.length} та</i>`;
       message += `\n🕒 ${new Date().toLocaleString('uz-UZ', {
         timeZone: 'Asia/Tashkent'
       })

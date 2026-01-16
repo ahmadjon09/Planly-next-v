@@ -16,15 +16,16 @@ import {
   Box,
   Maximize2,
   Minimize2,
-  AlertCircle
+  AlertCircle,
+  Flashlight,
+  FlashlightOff
 } from 'lucide-react'
-import { useState, useContext, useEffect, useRef } from 'react'
+import { useState, useContext, useEffect, useRef, useCallback } from 'react'
 import Fetch from '../middlewares/fetcher'
 import { ContextData } from '../contextData/Context'
 import { motion, AnimatePresence } from 'framer-motion'
 import jsQR from 'jsqr'
 import { scanned } from '../assets/js/saund'
-import Quagga from '@ericblade/quagga2';
 
 export default function AddProductModal({ open, setOpen, mutate }) {
   const { user, dark } = useContext(ContextData)
@@ -47,6 +48,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   const [error, setError] = useState('')
   const [selectedImages, setSelectedImages] = useState({})
   const [showImagePreview, setShowImagePreview] = useState(null)
+  const [flashlightOn, setFlashlightOn] = useState(false)
 
   // QR Scanner states
   const [showScanner, setShowScanner] = useState(false)
@@ -66,6 +68,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   const scannerContainerRef = useRef(null)
   const rafRef = useRef(null)
   const scannedRef = useRef(false)
+  const streamRef = useRef(null);
 
   // Tarjimalar
   const categories = [
@@ -172,7 +175,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
           height: { ideal: 1080 }
         },
       })
-
+      streamRef.current = stream;
       videoRef.current.srcObject = stream
       videoRef.current.setAttribute('playsinline', true)
       await videoRef.current.play()
@@ -201,9 +204,25 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     }
   }
 
+  const toggleFlashlight = useCallback(async () => {
+    if (!streamRef.current) return
 
-
-
+    try {
+      const videoTrack = streamRef.current.getVideoTracks()[0]
+      if (videoTrack && 'applyConstraints' in videoTrack) {
+        await videoTrack.applyConstraints({
+          advanced: [{ torch: !flashlightOn }]
+        })
+        setFlashlightOn(!flashlightOn)
+      }
+    } catch (err) {
+      console.error('Flashlight error:', err)
+      setMessage({
+        type: 'error',
+        text: 'Фонарик қўллаб-қувватланмайди'
+      })
+    }
+  }, [flashlightOn])
 
   const scanLoop = () => {
     if (scannedRef.current) return;
@@ -211,65 +230,73 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+    if (!video || !canvas || video.videoWidth === 0) {
       rafRef.current = requestAnimationFrame(scanLoop);
       return;
     }
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) {
       rafRef.current = requestAnimationFrame(scanLoop);
       return;
     }
 
+    // 🔥 KAMERA RESOLUTION
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Quagga ishlatish
-    Quagga.decodeSingle(
-      {
-        src: canvas.toDataURL('image/png'), // yoki to'g'ridan-to'g'ri ImageData bersa ham bo'ladi
-        numOfWorkers: navigator.hardwareConcurrency || 4,
-        decoder: {
-          readers: [
-            'ean_reader',        // EAN-13 + EAN-8
-            'upc_reader',        // UPC-A + UPC-E
-            // 'code_128_reader',   // agar kerak bo'lsa qo'shsa bo'ladi
-          ],
-          multiple: false,
-        },
-        locator: {
-          halfSample: true,
-          patchSize: 'medium',    // "x-small", "small", "medium", "large"
-        },
-      },
-      (result) => {
-        if (result?.codeResult?.code) {
-          scannedRef.current = true;
+    // 🔥 ZOOM PARAMETR
+    const zoom = 1.6; // 1.3–2.0 oralig‘ida o‘ynab ko‘r
+    const sw = canvas.width / zoom;
+    const sh = canvas.height / zoom;
+    const sx = (canvas.width - sw) / 2;
+    const sy = (canvas.height - sh) / 2;
 
-          // muvaffaqiyatli o‘qildi
-          const scanSound = new Audio(`data:audio/wav;base64,${scanned}`);
-          scanSound.volume = 1;
-          scanSound.play().catch(() => { });
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-          const barcode = result.codeResult.code;
-          setScanResult(barcode);
-          setProductData(prev => ({ ...prev, sku: barcode }));
-
-          setTimeout(() => {
-            stopScan();
-            setShowScanner(false);
-          }, 500);
-
-          return;
-        }
-
-        // topilmadi → davom etamiz
-        rafRef.current = requestAnimationFrame(scanLoop);
-      }
+    // 🔥 CENTER CROP + ZOOM
+    ctx.drawImage(
+      video,
+      sx, sy, sw, sh,
+      0, 0, canvas.width, canvas.height
     );
+
+    try {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      const code = jsQR(
+        imageData.data,
+        imageData.width,
+        imageData.height,
+        {
+          inversionAttempts: "attemptBoth" // 🔥 ENG MUHIM
+        }
+      );
+
+      if (code?.data) {
+        scannedRef.current = true;
+
+        const scanSound = new Audio(`data:audio/wav;base64,${scanned}`);
+        scanSound.volume = 1;
+        scanSound.play().catch(() => { });
+
+        setScanResult(code.data);
+        setProductData(prev => ({ ...prev, sku: code.data }));
+
+        setTimeout(() => {
+          stopScan();
+          setShowScanner(false);
+        }, 400);
+
+        return;
+      }
+    } catch (err) {
+      console.error("QR scan error:", err);
+    }
+
+    rafRef.current = requestAnimationFrame(scanLoop);
   };
+
 
 
   // Camera to'liq ekran rejimi
@@ -317,10 +344,17 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   }, [])
 
   useEffect(() => {
+    if (!open) return
+
+    setShowScanner(true)
+    setScanning(true)
+    startScan()
+
     return () => {
-      stopScan()
+      stopScan?.()
     }
-  }, [])
+  }, [open])
+
 
   // 🔄 Asosiy maydonlarni o'zgartirish
   const handleChange = (field, value) => {
@@ -762,7 +796,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       </div>
                       {skuStatus === 'exists' && existingProduct && (
                         <p className='text-xs text-gray-500'>
-                          Ҳозирги дона: {existingProduct.count || 0} | Жами: {(existingProduct.count || 0) + (productData.count || 0)} дона
+                          Ҳозирги дона: {existingProduct.count || 0} | Қўшилаётган: {(existingProduct.count || 0) + (productData.count || 0)} дона
                         </p>
                       )}
                     </div>
@@ -1085,7 +1119,12 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                           autoPlay
                           muted
                         />
-
+                        <button
+                          onClick={toggleFlashlight} // <-- shu o‘zgardi
+                          className='absolute bottom-10 right-10 text-white bg-green-500 p-4 rounded-2xl'
+                        >
+                          {flashlightOn ? <Flashlight /> : <FlashlightOff />}
+                        </button>
                         {/* Scanning overlay */}
                         {scanning && (
                           <>

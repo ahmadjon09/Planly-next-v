@@ -12,6 +12,8 @@ import { fileURLToPath } from 'url'
 import { getSystemHealth } from './controllers/health.js'
 import os from "os"
 import { bot } from './bot.js'
+import isExisted from './middlewares/isExisted.js'
+import IsAdmin from './middlewares/IsAdmin.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -43,7 +45,7 @@ app.get('/api/status', (req, res) => {
 })
 app.get('/api/', (_, res) => res.send('Server is running!'))
 app.use('/api/users', UserRoutes)
-app.use('/api/stats', StatsRoutes)
+app.use('/api/stats', isExisted, IsAdmin, StatsRoutes)
 app.use('/api/products', ProductRoutes)
 app.use('/api/orders', OrderRoutes)
 app.use('/api/health', getSystemHealth)
