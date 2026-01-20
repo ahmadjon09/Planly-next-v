@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import useSWR from 'swr';
 import {
     Bar, PieChart, Pie, Cell,
@@ -16,10 +16,12 @@ import {
     BarChart as BarChartIcon, LineChart as LineChartIcon,
     Bell, Menu, X, Database, AlertCircle,
     CheckCircle, Star, CreditCard, Truck,
-    Zap, Eye, Globe, Cpu, Shield, TrendingUp as Growth
+    Zap, Eye, Globe, Cpu, Shield, TrendingUp as Growth,
+    Server
 } from 'lucide-react';
 
 import Fetch from "../middlewares/fetcher";
+import { ContextData } from '../contextData/Context';
 
 // Tarjimalar
 const categories = [
@@ -32,20 +34,6 @@ const categories = [
     { value: 'other', label: 'Бошқа', color: '#6B7280' }
 ];
 
-const genders = [
-    { value: 'men', label: 'Эркак', color: '#3B82F6' },
-    { value: 'women', label: 'Аёл', color: '#EC4899' },
-    { value: 'kids', label: 'Болалар', color: '#10B981' },
-    { value: 'unisex', label: 'Унисекс', color: '#8B5CF6' }
-];
-
-const seasons = [
-    { value: 'summer', label: 'Ёз', color: '#F59E0B' },
-    { value: 'winter', label: 'Қиш', color: '#3B82F6' },
-    { value: 'spring', label: 'Баҳор', color: '#10B981' },
-    { value: 'autumn', label: 'Күз', color: '#EF4444' },
-    { value: 'all', label: 'Барча фасл', color: '#8B5CF6' }
-];
 
 // Vaqt oraliklari tarjimasi
 const timeRanges = [
@@ -65,6 +53,7 @@ const orderStatuses = {
 
 // Asosiy Dashboard komponenti
 export default function DashboardPage() {
+    const { pingms } = useContext(ContextData)
     const [timeRange, setTimeRange] = useState('monthly');
     const [activeChart, setActiveChart] = useState('revenue');
     const [selectedMetric, setSelectedMetric] = useState('all');
@@ -987,18 +976,22 @@ export default function DashboardPage() {
                         <div className="space-y-2">
                             <div className="flex justify-between text-sm">
                                 <span className="text-gray-600">Сервер жавоб вақти:</span>
-                                <span className="font-semibold">~210ms</span>
+                                <span className="font-semibold">{pingms ? pingms + ' ms' : '--'}</span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-gray-600">Бандлик даражаси:</span>
-                                <span className="font-semibold">--%</span>
+                                <span className="font-semibold">--</span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-gray-600">Хотира фойдаланиш:</span>
-                                <span className="font-semibold">--MB / 512MB</span>
+                                <span className="font-semibold">-- / 512MB</span>
                             </div>
+
                         </div>
                     </div>
+                    <a href={window.location.origin + "/api/system"} target='_blanck' className="flex w-full items-center justify-center mt-6 bg-blue-500 p-1 text-white rounded">
+                        <Server />
+                    </a>
                 </div>
             </div>
 

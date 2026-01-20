@@ -35,7 +35,7 @@ app.use(cors())
 app.use(express.json())
 app.use(express.static(path.join(__dirname, '../client/dist')))
 app.use(express.static(path.join(__dirname, 'public')))
-app.get('/api/status', (req, res) => {
+app.get('/api/status', (_, res) => {
   setImmediate(() => {
     res.json({
       status: 'working',
@@ -52,7 +52,7 @@ app.use('/api/health', getSystemHealth)
 app.get('/api/system', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'health.html'))
 })
-app.get('/api/about', (req, res) => {
+app.get('/api/about', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
 app.use((req, res) => {

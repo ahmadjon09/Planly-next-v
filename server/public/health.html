@@ -7,9 +7,7 @@
   <title>System Health Dashboard</title>
   <script>
     window.APP_CONFIG = {
-      baseURL: window.location.hostname === 'localhost'
-        ? 'http://localhost:7777/api'
-        : 'https://planly-beta.onrender.com/api'
+      baseURL: window.location.origin + "/api"
     };
   </script>
   <style>

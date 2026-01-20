@@ -192,20 +192,21 @@ export const GetAllProducts = async (req, res) => {
     }
 
     if (search) {
+      const safeSearch = search.trim();
       if (searchField === 'sku') {
-        query.sku = search;
-      }
-      else if (searchField === 'title') {
-        query.title = { $regex: search, $options: 'i' };
-      }
-      else {
+        query.sku = { $regex: `${safeSearch}$`, $options: 'i' };
+      } else if (searchField === 'title') {
+        query.title = { $regex: safeSearch, $options: 'i' };
+      } else {
         query.$or = [
-          { title: { $regex: search, $options: 'i' } },
-          { sku: { $regex: search, $options: 'i' } }
+          { title: { $regex: safeSearch, $options: 'i' } },
+          { sku: { $regex: safeSearch, $options: 'i' } }
         ];
       }
     }
 
+
+    console.log(query);
     const total = await Product.countDocuments(query);
 
     const products = await Product.find(query)

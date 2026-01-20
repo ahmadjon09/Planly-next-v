@@ -5,7 +5,7 @@ import { useContext } from 'react'
 import { ContextData } from '../contextData/Context'
 
 export const Ping = () => {
-  const { dark } = useContext(ContextData)
+  const { dark, setPingms } = useContext(ContextData)
   const [isOffline, setIsOffline] = useState(false)
 
   const checkConnection = async () => {
@@ -19,7 +19,7 @@ export const Ping = () => {
       await Fetch.get('/status')
       const end = performance.now()
       const latency = Number((end - start).toFixed())
-
+      setPingms(latency)
       setIsOffline(latency > 10000)
     } catch {
       setIsOffline(true)

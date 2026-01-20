@@ -6,8 +6,11 @@ export const ContextProvider = ({ children }) => {
   const [user, setUser] = useState({})
   const [openX, setOpenX] = useState(false)
   const [netErr, setNetErr] = useState(false)
+  const [pingms, setPingms] = useState(0)
+  const [ping, setPing] = useState(false)
   const [dark, setDark] = useState(() => {
     return localStorage.getItem('dark') === '!true'
+    return localStorage.getItem('dark') === 'true'
   })
 
   useEffect(() => {
@@ -34,8 +37,12 @@ export const ContextProvider = ({ children }) => {
         user,
         netErr,
         setNetErr,
+        ping,
+        setPing,
         openX,
-        setOpenX
+        setOpenX,
+        pingms,
+        setPingms
       }}
     >
       <>

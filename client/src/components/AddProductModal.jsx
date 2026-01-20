@@ -57,7 +57,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   const [scanError, setScanError] = useState('')
   const [cameraFullscreen, setCameraFullscreen] = useState(false)
 
-  // SKU check states
+  // АРТ check states
   const [checkingSku, setCheckingSku] = useState(false)
   const [skuStatus, setSkuStatus] = useState(null) // null, 'exists', 'not_found'
   const [existingProduct, setExistingProduct] = useState(null)
@@ -96,7 +96,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     { value: 'all', label: 'Барча фасл' }
   ]
 
-  // SKU ni tekshirish
+  // АРТ ni tekshirish
   const checkSku = async (sku) => {
     if (!sku.trim()) {
       setSkuStatus(null)
@@ -131,7 +131,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
         setExistingProduct(null)
       }
     } catch (error) {
-      console.error('SKU check error:', error)
+      console.error('АРТ check error:', error)
       setSkuStatus('error')
       setExistingProduct(null)
     } finally {
@@ -139,7 +139,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     }
   }
 
-  // SKU input'ni o'zgartirganda tekshirish
+  // АРТ input'ni o'zgartirganda tekshirish
   useEffect(() => {
     if (productData.sku && productData.sku.trim().length >= 3) {
       const timer = setTimeout(() => {
@@ -472,7 +472,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
       return false
     }
 
-    // Agar SKU mavjud bo'lsa, count majburiy
+    // Agar АРТ mavjud bo'lsa, count majburiy
     if (skuStatus === 'exists' && productData.count <= 0) {
       alert('❌ Дона сонини киритинг (маҳсулот омборда мавжуд)')
       return false
@@ -625,12 +625,12 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                 </button>
               </div>
 
-              {/* SKU Status Indicator */}
+              {/* АРТ Status Indicator */}
               {checkingSku && (
                 <div className={`p-4 rounded-xl ${dark ? 'bg-blue-900/30 border-blue-700' : 'bg-blue-50 border-blue-200'} border`}>
                   <div className='flex items-center gap-3'>
                     <Loader2 className='h-5 w-5 animate-spin text-blue-500' />
-                    <p className='text-blue-600 dark:text-blue-300'>SKU текширилмоқда...</p>
+                    <p className='text-blue-600 dark:text-blue-300'>АРТ текширилмоқда...</p>
                   </div>
                 </div>
               )}
@@ -645,7 +645,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                     <AlertCircle className='h-5 w-5 text-green-500 mt-0.5' />
                     <div className='flex-1'>
                       <p className='font-semibold text-green-600 dark:text-green-400 mb-2'>
-                        ✅ Бу SKU билан маҳсулот омборда мавжуд
+                        ✅ Бу АРТ билан маҳсулот омборда мавжуд
                       </p>
                       <div className='grid grid-cols-1 gap-2 md:grid-cols-2 text-sm'>
                         <div>
@@ -683,7 +683,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                     <AlertCircle className='h-5 w-5 text-blue-500 mt-0.5' />
                     <div>
                       <p className='font-semibold text-blue-600 dark:text-blue-400'>
-                        🔍 Бу SKU билан маҳсулот топилмади
+                        🔍 Бу АРТ билан маҳсулот топилмади
                       </p>
                       <p className='text-sm text-blue-600 dark:text-blue-400 mt-1'>
                         Янги маҳсулот сифатида қўшилиши учун барча майдонларни тўлдиринг.
@@ -702,12 +702,12 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                 <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
                   {/* Left Column - Basic Info */}
                   <div className='space-y-6'>
-                    {/* 🔹 SKU with Scanner */}
+                    {/* 🔹 АРТ with Scanner */}
                     <div className='space-y-3'>
                       <label className={`text-sm font-semibold flex items-center justify-between ${textColor}`}>
                         <div className='flex items-center gap-2'>
                           <IdCard size={16} className='text-blue-500' />
-                          SKU <span className='text-red-500'>*</span>
+                          АРТ <span className='text-red-500'>*</span>
                         </div>
                         <button
                           type='button'
@@ -728,7 +728,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                           value={productData.sku}
                           onChange={e => handleChange('sku', e.target.value)}
                           className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-10 ${inputBg}`}
-                          placeholder='SKU'
+                          placeholder='АРТ'
                           required
                           disabled={skuStatus === 'exists'}
                         />
@@ -1031,12 +1031,12 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                   <p className='font-semibold mb-2'>📝 Эслатма:</p>
                   <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-left'>
                     <div className='space-y-1'>
-                      <li><span className='font-semibold'>SKU, ном, нарх ва дона</span> мажбурий майдонлар</li>
-                      <li>SKU киритилганда автомат текширилади</li>
-                      <li>SKU мавжуд бўлса, фақат дона қўшиш мумкин</li>
+                      <li><span className='font-semibold'>АРТ, ном, нарх ва дона</span> мажбурий майдонлар</li>
+                      <li>АРТ киритилганда автомат текширилади</li>
+                      <li>АРТ мавжуд бўлса, фақат дона қўшиш мумкин</li>
                     </div>
                     <div className='space-y-1'>
-                      <li>SKU учун QR сканер ишлатиш мумкин</li>
+                      <li>АРТ учун QR сканер ишлатиш мумкин</li>
                       <li>Янги маҳсулот учун барча майдонлар тўлдирилади</li>
                       <li>Мавжуд маҳсулотнинг расмлари ўзгартирилмайди</li>
                     </div>
@@ -1072,7 +1072,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       <div className='flex items-center gap-3'>
                         <Camera className='h-6 w-6 text-white' />
                         <h3 className='text-xl font-bold text-white'>
-                          QR код сканер (SKU)
+                          QR код сканер (АРТ)
                         </h3>
                       </div>
                       <div className='flex items-center gap-2'>
@@ -1099,7 +1099,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       </div>
                     </div>
                     <p className='text-blue-200 text-sm mt-2'>
-                      SKU учун QR кодни камерага кўрсатинг
+                      АРТ учун QR кодни камерага кўрсатинг
                     </p>
                   </div>
 
