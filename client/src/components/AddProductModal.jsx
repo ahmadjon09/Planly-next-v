@@ -18,7 +18,8 @@ import {
   Minimize2,
   AlertCircle,
   Flashlight,
-  FlashlightOff
+  FlashlightOff,
+  Captions
 } from 'lucide-react'
 import { useState, useContext, useEffect, useRef, useCallback } from 'react'
 import Fetch from '../middlewares/fetcher'
@@ -72,29 +73,11 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
   // Tarjimalar
   const categories = [
-    { value: 'sneakers', label: 'Сникерс' },
-    { value: 'boots', label: 'Этик' },
-    { value: 'heels', label: 'Каблук' },
-    { value: 'sandals', label: 'Сандал' },
-    { value: 'slippers', label: 'Тапоқ' },
-    { value: 'shoes', label: 'Оёқ кийим' },
-    { value: 'other', label: 'Бошқа' }
-  ]
-
-  const genders = [
-    { value: 'men', label: 'Эркак' },
-    { value: 'women', label: 'Аёл' },
-    { value: 'kids', label: 'Болалар' },
-    { value: 'unisex', label: 'Унисекс' }
-  ]
-
-  const seasons = [
     { value: 'summer', label: 'Ёз' },
+    { value: 'spring-autumn', label: 'Баҳор-Күз' },
     { value: 'winter', label: 'Қиш' },
-    { value: 'spring', label: 'Баҳор' },
-    { value: 'autumn', label: 'Күз' },
-    { value: 'all', label: 'Барча фасл' }
   ]
+
 
   // АРТ ni tekshirish
   const checkSku = async (sku) => {
@@ -570,13 +553,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
   const inputBg = dark ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300'
   const cardBg = dark ? 'bg-gray-800/50 border-gray-700' : 'bg-gradient-to-br from-gray-50 to-white border-gray-200'
 
-  const formatPrice = (value) => {
-    if (!value) return "";
-    // faqat raqamlarni qoldiramiz
-    const numericValue = value.toString().replace(/\D/g, "");
-    // har 3 raqamdan keyin bo‘sh joy
-    return numericValue.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  };
   if (!open) return null
 
   return (
@@ -657,10 +633,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                           <span className='font-medium ml-2'>{existingProduct.count || 0} дона</span>
                         </div>
                         <div>
-                          <span className='text-gray-600 dark:text-gray-400'>Нархи:</span>
-                          <span className='font-medium ml-2'>{existingProduct.price?.toLocaleString()} сўм</span>
-                        </div>
-                        <div>
                           <span className='text-gray-600 dark:text-gray-400'>Категория:</span>
                           <span className='font-medium ml-2'>{existingProduct.category}</span>
                         </div>
@@ -699,7 +671,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                 animate={{ opacity: 1, x: 0 }}
                 className={`rounded-3xl border p-6 sm:p-8 ${cardBg}`}
               >
-                <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+                <div className='grid grid-cols-1 gap-6'>
                   {/* Left Column - Basic Info */}
                   <div className='space-y-6'>
                     {/* 🔹 АРТ with Scanner */}
@@ -800,81 +772,25 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                         </p>
                       )}
                     </div>
-                  </div>
-
-                  {/* Right Column - Category & Images */}
-                  <div className='space-y-6'>
-                    {/* 📂 Категория */}
-                    <div className='space-y-3'>
-                      <label className={`text-sm font-semibold ${textColor}`}>
-                        Категория <span className='text-red-500'>*</span>
-                      </label>
-                      <select
-                        value={productData.category}
-                        onChange={e => handleChange('category', e.target.value)}
-                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
-                        disabled={skuStatus === 'exists'}
-                      >
-                        {categories.map(cat => (
-                          <option key={cat.value} value={cat.value}>
-                            {cat.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* 👤 Жинс */}
-                    <div className='space-y-3'>
-                      <label className={`text-sm font-semibold ${textColor}`}>
-                        Жинс
-                      </label>
-                      <select
-                        value={productData.gender}
-                        onChange={e => handleChange('gender', e.target.value)}
-                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
-                        disabled={skuStatus === 'exists'}
-                      >
-                        {genders.map(g => (
-                          <option key={g.value} value={g.value}>
-                            {g.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* 🌸 Фасл */}
-                    <div className='space-y-3'>
-                      <label className={`text-sm font-semibold ${textColor}`}>
-                        Фасл
-                      </label>
-                      <select
-                        value={productData.season}
-                        onChange={e => handleChange('season', e.target.value)}
-                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
-                        disabled={skuStatus === 'exists'}
-                      >
-                        {seasons.map(s => (
-                          <option key={s.value} value={s.value}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Материал */}
                     <div className='space-y-3'>
                       <label className={`text-sm font-semibold flex items-center gap-2 ${textColor}`}>
-                        <Scissors size={16} className='text-orange-500' />
-                        Материал
+                        <Captions size={16} className='text-purple-500' />
+                        Категория <span className='text-red-500'>*</span>
                       </label>
-                      <input
-                        type='text'
-                        value={productData.material}
-                        onChange={e => handleChange('material', e.target.value)}
-                        className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
-                        placeholder='Чарм, мато, пластмасса...'
-                        disabled={skuStatus === 'exists'}
-                      />
+                      <div className='relative'>
+                        <select
+                          value={productData.category}
+                          onChange={e => handleChange('category', e.target.value)}
+                          className={`w-full border-2 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all ${inputBg}`}
+                          disabled={skuStatus === 'exists'}
+                        >
+                          {categories.map(cat => (
+                            <option key={cat.value} value={cat.value}>
+                              {cat.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1025,24 +941,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                 </motion.div>
               )}
 
-              {/* Footer info */}
-              <div className={`text-center text-sm pt-4 ${textMuted}`}>
-                <div className={`p-4 rounded-lg ${dark ? 'bg-blue-900/20' : 'bg-blue-50/50'}`}>
-                  <p className='font-semibold mb-2'>📝 Эслатма:</p>
-                  <div className='grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-left'>
-                    <div className='space-y-1'>
-                      <li><span className='font-semibold'>АРТ, ном, нарх ва дона</span> мажбурий майдонлар</li>
-                      <li>АРТ киритилганда автомат текширилади</li>
-                      <li>АРТ мавжуд бўлса, фақат дона қўшиш мумкин</li>
-                    </div>
-                    <div className='space-y-1'>
-                      <li>АРТ учун QR сканер ишлатиш мумкин</li>
-                      <li>Янги маҳсулот учун барча майдонлар тўлдирилади</li>
-                      <li>Мавжуд маҳсулотнинг расмлари ўзгартирилмайди</li>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </motion.div>
           </div>
 

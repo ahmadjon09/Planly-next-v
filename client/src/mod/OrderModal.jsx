@@ -146,10 +146,12 @@ export const AddNewOrder = () => {
     setScannedProducts(prev => new Set([...prev, modelId]));
     try {
       const { data } = await Fetch.get(`/products/qr/scann/${modelId.trim()}`)
+
+
       if (data?.product) {
         const productTypeData = data.product
         const existingIndex = selectedProducts.findIndex(
-          p => p.productId === productTypeData._id && p.model === productTypeData.model
+          p => p.productId === productTypeData._id
         )
         if (existingIndex !== -1) {
           setSelectedProducts(prev => {
@@ -172,6 +174,7 @@ export const AddNewOrder = () => {
             title: productTypeData.title,
             category: productTypeData.category,
             model: productTypeData.model,
+            sku: productTypeData.sku,
             color: productTypeData.color || '--',
             size: productTypeData.size || '--',
             style: productTypeData.style || '--',
@@ -1223,7 +1226,7 @@ export const AddNewOrder = () => {
                   <div className='relative rounded-xl overflow-hidden bg-black'>
                     <video
                       ref={videoRef}
-                      className={`w-full ${cameraFullscreen ? 'h-[calc(100vh-180px)]' : 'h-[70vh]'} object-cover`}
+                      className={`w-full ${cameraFullscreen ? 'h-[calc(100vh-180px)]' : 'h-[55vh]'} object-cover`}
                       playsInline
                       autoPlay
                       muted
@@ -1314,7 +1317,6 @@ export const AddNewOrder = () => {
 
 // ProductItem Component - Light mode ga optimallashtirildi
 const ProductItem = ({
-  maxcount,
   item,
   index,
   onQuantityChange,
@@ -1373,10 +1375,11 @@ const ProductItem = ({
               <Trash2 size={18} />
             </button>
           </div>
+          <div className='flex gap-1 flex-wrap'><b>АРТ:</b> <i>{item.sku}</i></div>
           <div className="flex flex-wrap items-center gap-4">
             {item.count > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-gray-600">Омборда:</span>
+                <b className="text-gray-600">Омборда:</b>
                 <span className={`font-medium ${item.count < item.quantity ? 'text-red-600' : 'text-green-600'}`}>
                   {item.count} {item.unit}
                 </span>

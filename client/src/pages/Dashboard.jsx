@@ -25,13 +25,9 @@ import { ContextData } from '../contextData/Context';
 
 // Tarjimalar
 const categories = [
-    { value: 'sneakers', label: 'Сникерс', color: '#3B82F6' },
-    { value: 'boots', label: 'Этик', color: '#10B981' },
-    { value: 'heels', label: 'Каблук', color: '#EC4899' },
-    { value: 'sandals', label: 'Сандал', color: '#F59E0B' },
-    { value: 'slippers', label: 'Тапоқ', color: '#8B5CF6' },
-    { value: 'shoes', label: 'Оёқ кийим', color: '#EF4444' },
-    { value: 'other', label: 'Бошқа', color: '#6B7280' }
+    { value: 'summer', label: 'Ёз', color: "#38da17" },
+    { value: 'spring-autumn', label: 'Баҳор-Күз', color: "#f585ff" },
+    { value: 'winter', label: 'Қиш', color: "#0b84f5" },
 ];
 
 

@@ -436,22 +436,15 @@ export const ProductsPage = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const handleOpenHistory = (productId) => {
-    navigate(`/products/${productId}/history`)
-  }
 
   const products = data?.data?.data || []
   const pagination = data?.data?.pagination || {}
 
   // Tarjimalar
   const categories = [
-    { value: 'sneakers', label: 'Сникерс' },
-    { value: 'boots', label: 'Этик' },
-    { value: 'heels', label: 'Каблук' },
-    { value: 'sandals', label: 'Сандал' },
-    { value: 'slippers', label: 'Тапоқ' },
-    { value: 'shoes', label: 'Оёқ кийим' },
-    { value: 'other', label: 'Бошқа' }
+    { value: 'summer', label: 'Ёз' },
+    { value: 'spring-autumn', label: 'Баҳор-Күз' },
+    { value: 'winter', label: 'Қиш' },
   ]
 
   const genders = [
@@ -1317,18 +1310,9 @@ export const ProductsPage = () => {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">
-                              АРТ
+                              АРТ:
                             </label>
-                            {user.role === 'admin' ? (
-                              <input
-                                type="text"
-                                value={editing[viewData._id]?.sku || viewData.sku}
-                                onChange={e => handleChange(viewData._id, 'sku', e.target.value)}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                              />
-                            ) : (
-                              <p className="font-medium text-gray-800">{viewData.sku}</p>
-                            )}
+                            <p className="font-medium text-gray-800">{viewData.sku}</p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">

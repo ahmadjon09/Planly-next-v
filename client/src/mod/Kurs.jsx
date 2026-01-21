@@ -9,7 +9,7 @@ export const USDToUZSWidget = ({ position = 'bottom-right', refreshInterval = 60
     const [kurs, setKurs] = useState()
     const modalRef = useRef(null)
 
-    const { dark } = useContext(ContextData) // contextdan dark olamiz
+    const { dark } = useContext(ContextData)
 
     const { data, mutate } = useSWR(
         'https://cbu.uz/uz/arkhiv-kursov-valyut/json/',
