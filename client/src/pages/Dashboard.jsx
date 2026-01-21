@@ -6,17 +6,17 @@ import {
     ResponsiveContainer, Area, ComposedChart, Line
 } from 'recharts';
 import {
-    TrendingUp, TrendingDown, DollarSign, ShoppingCart,
+    TrendingUp, DollarSign, ShoppingCart,
     Package, Activity, Calendar, BarChart3,
     PieChart as PieChartIcon, Target, Award,
     Clock, RefreshCw, Filter, Download,
     ChevronUp, ChevronDown, TrendingUp as TrendingUpIcon,
-    TrendingDown as TrendingDownIcon, Percent, Box, Users,
+    TrendingDown as TrendingDownIcon,
     ShoppingCart as CartIcon, Tag, ShoppingBag,
     BarChart as BarChartIcon, LineChart as LineChartIcon,
-    Bell, Menu, X, Database, AlertCircle,
-    CheckCircle, Star, CreditCard, Truck,
-    Zap, Eye, Globe, Cpu, Shield, TrendingUp as Growth,
+    X, Database, AlertCircle,
+    CheckCircle,
+    Zap, Globe, Cpu, Shield, TrendingUp as Growth,
     Server
 } from 'lucide-react';
 
@@ -25,9 +25,9 @@ import { ContextData } from '../contextData/Context';
 
 // Tarjimalar
 const categories = [
-    { value: 'summer', label: 'Ёз', color: "#38da17" },
-    { value: 'spring-autumn', label: 'Баҳор-Күз', color: "#f585ff" },
-    { value: 'winter', label: 'Қиш', color: "#0b84f5" },
+    { value: 'Ёзги', label: 'Ёзги', color: "#38da17" },
+    { value: 'Баҳор-кузги', label: 'Баҳор-кузги', color: "#f585ff" },
+    { value: 'Қишги', label: 'Қишги', color: "#0b84f5" },
 ];
 
 
@@ -52,7 +52,6 @@ export default function DashboardPage() {
     const { pingms } = useContext(ContextData)
     const [timeRange, setTimeRange] = useState('monthly');
     const [activeChart, setActiveChart] = useState('revenue');
-    const [selectedMetric, setSelectedMetric] = useState('all');
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
 
@@ -121,25 +120,6 @@ export default function DashboardPage() {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0
         }).format(number) + ' сум';
-    };
-
-    // Format percentage function
-    const formatPercentage = (num) => {
-        if (num === null || num === undefined) return '0%';
-        const number = parseFloat(num);
-        if (isNaN(number)) return '0%';
-        return number.toFixed(1) + '%';
-    };
-
-    // Format date function
-    const formatDate = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        return date.toLocaleDateString('uz-UZ', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-        });
     };
 
     // Format time function
@@ -407,20 +387,20 @@ export default function DashboardPage() {
             <div className="mb-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
+                        <div className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
                             <div className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl">
                                 <BarChartIcon className="h-6 w-6 text-white" />
                             </div>
                             Дашбоард Панели
-                        </h1>
-                        <p className="text-gray-600 mt-2 flex items-center gap-2">
+                        </div>
+                        <div className="text-gray-600 mt-2 flex items-center gap-2">
                             <Clock className="h-4 w-4" />
                             Маълумотлар {currentTime} да янгиланди
                             <span className="flex items-center gap-1 ml-2 text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
                                 <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
                                 Онлайн
                             </span>
-                        </p>
+                        </div>
                     </div>
                 </div>
 

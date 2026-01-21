@@ -14,7 +14,7 @@ import { Admins } from './pages/Admins'
 import { Workers } from './pages/Workers'
 import { Orders } from './pages/Orders'
 import { AddNewOrder } from './mod/OrderModal'
-import DashboardPage, {  } from './pages/Dashboard'
+import DashboardPage, { } from './pages/Dashboard'
 
 export default function App() {
   const { setUser, user, netErr } = useContext(ContextData)
@@ -79,7 +79,7 @@ export default function App() {
     { path: 'products', element: <ProductsPage /> },
 
     { path: 'order', element: <Orders /> },
-    { path: 'addorder', element: <AddNewOrder /> },
+    { path: 'addorder/:id/:name/:phone', element: <AddNewOrder /> },
 
     { path: '*', element: <Err /> }
   ].filter(Boolean)

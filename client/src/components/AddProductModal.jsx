@@ -73,9 +73,9 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
   // Tarjimalar
   const categories = [
-    { value: 'summer', label: 'Ёз' },
-    { value: 'spring-autumn', label: 'Баҳор-Күз' },
-    { value: 'winter', label: 'Қиш' },
+    { value: 'Ёзги', label: 'Ёзги' },
+    { value: 'Баҳор-кузги', label: 'Баҳор-кузги' },
+    { value: 'Қишги', label: 'Қишги' },
   ]
 
 
@@ -797,25 +797,6 @@ export default function AddProductModal({ open, setOpen, mutate }) {
 
                 {/* 📸 Асосий расмлар */}
                 <div className='mt-8'>
-                  <div className='flex items-center justify-between mb-6'>
-                    <div className='flex items-center gap-3'>
-                      <div className='p-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500'>
-                        <ImageIcon className='h-5 w-5 text-white' />
-                      </div>
-                      <div>
-                        <h4 className={`font-semibold ${textColor}`}>
-                          Асосий расмлар
-                        </h4>
-                        <p className={`text-xs ${textMuted}`}>
-                          Маҳсулотнинг асосий кўриниш расмлари
-                        </p>
-                      </div>
-                    </div>
-                    <span className={`text-sm ${textMuted}`}>
-                      {mainImages.length} та расм
-                    </span>
-                  </div>
-
                   {/* File input */}
                   <div className='mb-6'>
                     <input
@@ -843,7 +824,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                       <span className='font-medium'>
                         {imageUploading ? 'Юкланмоқда...' :
                           skuStatus === 'exists' ? 'Мавжуд маҳсулот учун расмлар ўзгартирилмайди' :
-                            'Расмларни юкланг (бир нечта танлаш мумкин)'}
+                            'Расмларни юклаш'}
                       </span>
                     </label>
                   </div>
@@ -863,7 +844,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                           </div>
                           <button
                             onClick={() => removeMainImage(idx)}
-                            className='absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:scale-110'
+                            className='absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-100 transition-opacity duration-300 hover:scale-110'
                             title='Ўчириш'
                             disabled={skuStatus === 'exists'}
                           >
@@ -1117,7 +1098,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                   <img
                     src={showImagePreview}
                     alt='Preview'
-                    className='w-full h-full object-contain rounded-lg'
+                    className='w-full h-full max-w-[70vw] max-h-[70vh] object-contain rounded-lg'
                   />
                   <button
                     onClick={() => setShowImagePreview(null)}

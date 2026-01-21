@@ -76,8 +76,8 @@ const sendOrderNotification = async (order) => {
         const productData = productsMap[p.product.toString()];
         const title = productData?.title || "?????";
 
-
         message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
+        message += `   ├─ 🆔 АРТ: <code>${p.sku || "—"}</code>\n`;
         message += `   ├─ 📦 Миқдор: ${p.quantity} Дона\n`;
         message += `   └─ 💰 Нархи: <b>${p.price}</b>\n\n`;
       });

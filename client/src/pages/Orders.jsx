@@ -295,7 +295,7 @@ export const Orders = () => {
 
             <div className='flex flex-col sm:flex-row gap-3 w-full lg:w-auto'>
               <Link
-                to={"/addorder"}
+                to={`/addorder/${selectedClient?._id || "empty"}/${selectedClient?.fullName || "empty"}/${selectedClient?.phoneNumber || "empty"}`}
                 className='flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold'
               >
                 <Plus size={20} />

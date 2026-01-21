@@ -82,6 +82,62 @@ const sendBotNotificationV2 = async (products) => {
   }
 };
 
+const sendBotNotificationV3 = async (products) => {
+  try {
+    const loggedUsers = await Users.find({
+      isLoggedIn: true,
+      telegramId: { $exists: true, $ne: null }
+    }).lean();
+
+    if (!loggedUsers.length || !products?.length) return;
+
+    const time = new Date().toLocaleString("uz-UZ", {
+      timeZone: "Asia/Tashkent"
+    });
+
+    for (const user of loggedUsers) {
+      let message = `📦 <b>ЯНГИ / ЯНГИЛАНГАН МАҲСУЛОТЛАР</b>\n`;
+      message += `━━━━━━━━━━━━━━━\n\n`;
+
+      products.forEach((product, index) => {
+        message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
+        message += `   ├─ 🆔 АРТ: <code>${product.sku || "—"}</code>\n`;
+        message += `   ├─ 📂 Категория: ${product.category || "—"}\n`;
+        message += `   ├─ 📦 Қолдиқ: ${product.count ?? 0} дона\n`;
+        message += `   ├─ 🔥 Сотилган: ${product.sold ?? 0} дона\n`;
+        message += `   ├─ ✅ Мавжуд: ${product.isAvailable ? "Ҳа" : "Йўқ"}\n`;
+
+        if (product.material) {
+          message += `   ├─ 🧵 Материал: ${product.material}\n`;
+        }
+
+        if (product.mainImages?.length) {
+          message += `   ├─ 🖼 Расм: ${product.mainImages[0]}\n`;
+        }
+
+        if (product.qrCode) {
+          message += `   └─ 🔳 QR: ${product.qrCode}\n`;
+        }
+
+        message += `\n`;
+      });
+
+      message += `━━━━━━━━━━━━━━━\n`;
+      message += `🕒 ${time}`;
+
+      await bot.telegram.sendMessage(user.telegramId, message, {
+        parse_mode: "HTML",
+        disable_web_page_preview: false
+      });
+    }
+
+    console.log("✅ Bot хабарлари муваффақиятли юборилди");
+  } catch (err) {
+    console.error("❌ Bot хабар юборишда хатолик:", err.message);
+  }
+};
+
+
 export const CreateNewProduct = async (req, res) => {
   try {
     const data = req.body;
@@ -134,7 +190,7 @@ export const CreateNewProduct = async (req, res) => {
       description: data.description || "",
       count: incomingCount
     });
-    sendBotNotification([newProduct]);
+    sendBotNotificationV3([newProduct]);
     return res.status(201).json({
       message: "Маҳсулот муваффақиятли яратилди ✅",
       product: newProduct,

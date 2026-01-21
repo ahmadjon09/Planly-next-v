@@ -18,8 +18,6 @@ import {
   QrCode,
   Scan,
   Camera,
-  Barcode,
-  Hash,
   Maximize2,
   Minimize2,
   VideoOff,
@@ -38,12 +36,29 @@ import Fetch from '../middlewares/fetcher'
 import { ContextData } from '../contextData/Context'
 import { mutate } from 'swr'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { scanned } from '../assets/js/saund'
 
 export const AddNewOrder = () => {
   const { user } = useContext(ContextData)
   const navigate = useNavigate()
+  const { id, name, phone } = useParams()
+
+  useEffect(() => {
+    if (
+      id !== "empty" &&
+      name !== "empty" &&
+      phone !== "empty"
+    ) {
+      const clientV2 = {
+        _id: id,
+        fullName: name,
+        phoneNumber: phone
+      }
+
+      handleSelectClient(clientV2)
+    }
+  }, [id, name, phone])
 
   // State variables
   const [allOrders, setAllOrders] = useState([])
@@ -78,12 +93,17 @@ export const AddNewOrder = () => {
   const streamRef = useRef(null);
 
   // Client data
+
+
   const [clientData, setClientData] = useState({
-    clientId: '',
+    clientId: "",
     name: '',
     phoneNumber: '',
     address: ''
   })
+
+
+
 
   // ✅ Fetch all orders for clients extraction
   const fetchAllOrders = useCallback(async () => {
@@ -491,14 +511,17 @@ export const AddNewOrder = () => {
       phoneNumber: client.phoneNumber,
       address: client.address || ''
     })
+
     setShowClientsList(false)
     setClientSearchQuery('')
     setIsEditingClient(false)
+
     setMessage({
       type: 'success',
-      text: `✅ Мижоз танланди: ${client.name}`
+      text: `✅ Мижоз танланди: ${client.fullName}`
     })
   }, [])
+
 
   // ✅ Handle clear client
   const handleClearClient = useCallback(() => {

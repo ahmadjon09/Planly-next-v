@@ -442,9 +442,9 @@ export const ProductsPage = () => {
 
   // Tarjimalar
   const categories = [
-    { value: 'summer', label: 'Ёз' },
-    { value: 'spring-autumn', label: 'Баҳор-Күз' },
-    { value: 'winter', label: 'Қиш' },
+    { value: 'Ёзги', label: 'Ёзги' },
+    { value: 'Баҳор-кузги', label: 'Баҳор-кузги' },
+    { value: 'Қишги', label: 'Қишги' },
   ]
 
   const genders = [
@@ -671,9 +671,6 @@ export const ProductsPage = () => {
                                 <p className="text-sm text-gray-600">
                                   АРТ: {product.sku}
                                 </p>
-                                <p className="text-xs text-gray-600">
-                                  {genders.find(g => g.value === product.gender)?.label || product.gender} • {seasons.find(s => s.value === product.season)?.label || product.season}
-                                </p>
                               </div>
                             </div>
                           </td>
@@ -870,6 +867,7 @@ export const ProductsPage = () => {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.05 }}
+                          onClick={() => setViewData(product)}
                           className={`hover:bg-gray-50 cursor-pointer ${product.count == 0 ? "bg-red-300 hover:bg-red-200" : ""}`}
                         >
                           {/* Product Info */}
@@ -897,9 +895,6 @@ export const ProductsPage = () => {
                                 </p>
                                 <p className="text-sm text-gray-600">
                                   АРТ: {product.sku}
-                                </p>
-                                <p className="text-xs text-gray-600">
-                                  {genders.find(g => g.value === product.gender)?.label || product.gender} • {seasons.find(s => s.value === product.season)?.label || product.season}
                                 </p>
                               </div>
                             </div>
@@ -1131,7 +1126,7 @@ export const ProductsPage = () => {
                                 />
 
                                 {/* Remove button overlay */}
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center">
+                                <div className="absolute inset-0 bg-black/0  transition-all duration-300 flex items-center justify-center">
                                   {removingImages[img] ? (
                                     <div className="p-2 bg-red-500 rounded-full">
                                       <Loader2 className="h-5 w-5 text-white animate-spin" />
@@ -1139,7 +1134,7 @@ export const ProductsPage = () => {
                                   ) : (
                                     <button
                                       onClick={() => handleImageRemove(viewData._id, img)}
-                                      className="opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300 p-2 bg-red-500 rounded-full hover:bg-red-600"
+                                      className="transform -translate-y-10 translate-x-15 transition-all duration-300 p-2 bg-red-500 rounded-full"
                                       title="Расмни ўчириш"
                                       disabled={!user.role === 'admin'}
                                     >
@@ -1190,9 +1185,9 @@ export const ProductsPage = () => {
                             {/* Drag & Drop Area */}
                             <div
                               onClick={() => fileInputRef.current?.click()}
-                              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300 hover:border-blue-500 hover:bg-blue-50 ${selectedFiles[viewData._id] ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
+                              className={`border-2 border-dashed rounded-xl p-2 text-center cursor-pointer transition-all duration-300 hover:border-blue-500 hover:bg-blue-50 ${selectedFiles[viewData._id] ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
                             >
-                              <div className="space-y-3">
+                              <div className="flex gap-2">
                                 <div className="flex justify-center">
                                   <div className="p-3 bg-blue-100 rounded-full">
                                     <Upload className="h-6 w-6 text-blue-600" />
@@ -1337,7 +1332,7 @@ export const ProductsPage = () => {
                         </div>
 
                         {/* Gender, Season, Material */}
-                        <div className="grid grid-cols-3 gap-3">
+                        {/* <div className="grid grid-cols-3 gap-3">
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">
                               Жинс
@@ -1393,7 +1388,7 @@ export const ProductsPage = () => {
                               <p className="font-medium text-gray-800">{viewData.material}</p>
                             )}
                           </div>
-                        </div>
+                        </div> */}
                       </div>
 
                       {/* Stock & Status Summary */}
@@ -1434,7 +1429,7 @@ export const ProductsPage = () => {
                       </div>
 
                       {/* Count Field (if needed for editing) */}
-                      {user.role === 'admin' && (
+                      {/* {user.role === 'admin' && (
                         <div>
                           <label className="text-xs font-medium text-gray-600 block mb-1">
                             Дона сони
@@ -1447,10 +1442,10 @@ export const ProductsPage = () => {
                             min="0"
                           />
                         </div>
-                      )}
+                      )} */}
 
                       {/* QR Code */}
-                      <div className="rounded-xl p-4 bg-gray-50 border border-gray-200">
+                      {/* <div className="rounded-xl p-4 bg-gray-50 border border-gray-200">
                         <h4 className="text-sm font-semibold text-gray-700 mb-3">QR Код</h4>
                         <div className="flex items-center gap-4">
                           <img
@@ -1470,7 +1465,7 @@ export const ProductsPage = () => {
                             </button>
                           </div>
                         </div>
-                      </div>
+                      </div> */}
                     </div>
                   </div>
                 </div>
@@ -1538,7 +1533,7 @@ export const ProductsPage = () => {
                 <img
                   src={previewImages[activeIndex]}
                   alt="Preview"
-                  className="max-w-4xl max-h-[80vh] object-contain rounded-lg"
+                  className="max-w-[70vw] max-h-[80vh] h-auto w-auto object-contain rounded-lg"
                 />
 
                 {/* NEXT */}
