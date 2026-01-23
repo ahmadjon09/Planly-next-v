@@ -372,7 +372,7 @@ export const ProductsPage = () => {
       formData.append('image', file);
 
       const response = await fetch(
-        `https://api.imgbb.com/1/upload?key=955f1e37f0aa643262e734c080305b10`,
+        `https://api.imgbb.com/1/upload?key=71d33e420442f832407f555a16f7d2dc`,
         {
           method: 'POST',
           body: formData
