@@ -11,7 +11,6 @@ import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import { getSystemHealth } from './controllers/health.js'
 import os from "os"
-import { bot } from './bot.js'
 import isExisted from './middlewares/isExisted.js'
 import IsAdmin from './middlewares/IsAdmin.js'
 

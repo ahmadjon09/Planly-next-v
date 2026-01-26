@@ -529,14 +529,14 @@ export const ProductsPage = () => {
                 onChange={e => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all duration-300 bg-gray-50 border-gray-300"
               />
-              <select
+              {/* <select
                 value={searchField}
                 onChange={e => setSearchField(e.target.value)}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 border border-gray-300 rounded-lg px-2 py-1 text-sm outline-none"
               >
                 <option value="title">Номи бўйича</option>
                 <option value="sku">АРТ бўйича</option>
-              </select>
+              </select> */}
             </div>
 
             {/* Filters Grid */}

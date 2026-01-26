@@ -326,17 +326,17 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     }
   }, [])
 
-  useEffect(() => {
-    if (!open) return
+  // useEffect(() => {
+  //   if (!open) return
 
-    setShowScanner(true)
-    setScanning(true)
-    startScan()
+  //   setShowScanner(true)
+  //   setScanning(true)
+  //   startScan()
 
-    return () => {
-      stopScan?.()
-    }
-  }, [open])
+  //   return () => {
+  //     stopScan?.()
+  //   }
+  // }, [open])
 
 
   // 🔄 Asosiy maydonlarni o'zgartirish

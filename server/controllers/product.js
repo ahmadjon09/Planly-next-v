@@ -97,7 +97,7 @@ const sendBotNotificationV3 = async (products) => {
 
     for (const user of loggedUsers) {
       let message = `📦 <b>ЯНГИ / ЯНГИЛАНГАН МАҲСУЛОТЛАР</b>\n`;
-      message += `━━━━━━━━━━━━━━━\n\n`;
+      message += `━━━━━━\n\n`;
 
       products.forEach((product, index) => {
         message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
@@ -107,22 +107,15 @@ const sendBotNotificationV3 = async (products) => {
         message += `   ├─ 🔥 Сотилган: ${product.sold ?? 0} дона\n`;
         message += `   ├─ ✅ Мавжуд: ${product.isAvailable ? "Ҳа" : "Йўқ"}\n`;
 
-        if (product.material) {
-          message += `   ├─ 🧵 Материал: ${product.material}\n`;
-        }
 
         if (product.mainImages?.length) {
           message += `   ├─ 🖼 Расм: ${product.mainImages[0]}\n`;
         }
 
-        if (product.qrCode) {
-          message += `   └─ 🔳 QR: ${product.qrCode}\n`;
-        }
-
         message += `\n`;
       });
 
-      message += `━━━━━━━━━━━━━━━\n`;
+      message += `━━━━━━━━━━\n`;
       message += `🕒 ${time}`;
 
       await bot.telegram.sendMessage(user.telegramId, message, {
@@ -249,20 +242,15 @@ export const GetAllProducts = async (req, res) => {
 
     if (search) {
       const safeSearch = search.trim();
-      if (searchField === 'sku') {
-        query.sku = { $regex: `${safeSearch}$`, $options: 'i' };
-      } else if (searchField === 'title') {
-        query.title = { $regex: safeSearch, $options: 'i' };
-      } else {
-        query.$or = [
-          { title: { $regex: safeSearch, $options: 'i' } },
-          { sku: { $regex: safeSearch, $options: 'i' } }
-        ];
-      }
+
+      query.$or = [
+        { title: { $regex: `^${safeSearch}`, $options: 'i' } },
+        { sku: { $regex: `^${safeSearch}`, $options: 'i' } }
+      ];
     }
 
 
-    console.log(query);
+
     const total = await Product.countDocuments(query);
 
     const products = await Product.find(query)

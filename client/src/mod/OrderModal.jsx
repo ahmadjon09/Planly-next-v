@@ -88,7 +88,6 @@ export const AddNewOrder = () => {
   const rafRef = useRef(null)
   const scannerContainerRef = useRef(null)
   const fileInputRef = useRef(null)
-  const lastScannedRef = useRef(null)
   const scannedOnceRef = useRef(false)
   const streamRef = useRef(null);
 
@@ -439,12 +438,6 @@ export const AddNewOrder = () => {
     }
   }, [])
 
-  // Cleanup
-  useEffect(() => {
-    startScan()
-    setShowScanner(true)
-    setScanning(true)
-  }, [])
 
 
 
@@ -746,11 +739,7 @@ export const AddNewOrder = () => {
     }
   }, [fetchAllOrders])
 
-  const formatPrice = (value) => {
-    if (!value) return "";
-    const numericValue = value.toString().replace(/\D/g, "");
-    return numericValue.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-4 md:p-6">
