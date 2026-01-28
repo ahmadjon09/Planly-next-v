@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { generateSKU } from "../middlewares/sku.js";
+import mongooseLeanVirtuals from "mongoose-lean-virtuals";
 
 const ProductSchema = new mongoose.Schema(
   {
@@ -39,7 +40,7 @@ const ProductSchema = new mongoose.Schema(
   }
 );
 
-
+ProductSchema.plugin(mongooseLeanVirtuals);
 
 // ✅ SKU AVTOMATIK YARATISH (MUAMMONING ASOSI SHU EDI)
 ProductSchema.pre("save", function (next) {

@@ -10,7 +10,9 @@ export const ContextProvider = ({ children }) => {
   const [ping, setPing] = useState(false)
   const [dark, setDark] = useState(() => {
     return localStorage.getItem('dark') === '!true'
-    return localStorage.getItem('dark') === 'true'
+  })
+  const [visible, setVisible] = useState(() => {
+    return localStorage.getItem('is_DCC') === '!true'
   })
 
   useEffect(() => {

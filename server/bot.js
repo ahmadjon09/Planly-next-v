@@ -243,6 +243,12 @@ const formatPhone = (phone) => {
     if (cleaned.match(/^[0-9]{9}$/)) return `+998${cleaned}`;
     return cleaned;
 };
+bot.use((ctx, next) => {
+    if (ctx.chat?.type !== 'private') {
+        return
+    }
+    return next();
+});
 
 // ===== 🚀 /START КОМАНДАСИ =====
 bot.start(async (ctx) => {
@@ -286,6 +292,8 @@ ${STYLES.ICONS.LOCK} <b>Хавфсизлик учун фақат админис�
     await ctx.reply(guestText, { parse_mode: "HTML", ...createLoginMenu() });
 });
 
+
+
 // ===== 🔐 /LOGIN КОМАНДАСИ =====
 bot.command("login", async (ctx) => {
     const user = await Users.findOne({
@@ -293,7 +301,7 @@ bot.command("login", async (ctx) => {
         isLoggedIn: true
     });
 
-    if (user?.role === "admin") {
+    if (true) {
         return editOrReply(ctx, null,
             `${STYLES.ICONS.SUCCESS} <b>Сиз аллақачон тизимга киргансиз!</b>\n\n${STYLES.HTML.QUOTE("Профил маълумотларингизни кўриш учун /profile буюрғидан фойдаланинг")}`,
             { ...createMainMenu(), parse_mode: "HTML" }

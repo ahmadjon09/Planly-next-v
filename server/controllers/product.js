@@ -3,130 +3,79 @@ import { sendErrorResponse } from '../middlewares/sendErrorResponse.js'
 import Users from "../models/user.js"
 import { bot } from '../bot.js';
 
+const buildProductMessage = (products) => {
+  const time = new Date().toLocaleString("uz-UZ", {
+    timeZone: "Asia/Tashkent"
+  });
+
+  let message = `📦 <b>ЯНГИ / ЯНГИЛАНГАН МАҲСУЛОТЛАР</b>\n`;
+  message += `━━━━━━\n\n`;
+
+  products.forEach((product, index) => {
+    message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
+    message += `   ├─ 🆔 АРТ: <code>${product.sku || "—"}</code>\n`;
+    message += `   ├─ 📂 Категория: ${product.category || "—"}\n`;
+    message += `   ├─ 📦 Қолдиқ: ${product.count ?? 0} дона\n`;
+    message += `   ├─ 🔥 Сотилган: ${product.sold ?? 0} дона\n`;
+    message += `   ├─ ✅ Мавжуд: ${product.isAvailable ? "Ҳа" : "Йўқ"}\n`;
+
+    if (product.addedCount) {
+      message += `   ├─ ➕ Қўшилди: ${product.addedCount} дона\n`;
+    }
+
+    if (product.mainImages?.length) {
+      message += `   ├─ 🖼 Расм: ${product.mainImages[0]}\n`;
+    }
+
+    message += `\n`;
+  });
+
+  message += `━━━━━━━━━━\n`;
+  message += `🕒 ${time}`;
+
+  return message;
+};
+
 const sendBotNotification = async (products) => {
   try {
-    const loggedUsers = await Users.find({ isLoggedIn: true }).lean();
+    if (!products?.length) return;
 
-    if (!loggedUsers.length) return;
-    if (!products.length) return;
-
-    for (const user of loggedUsers) {
-      if (!user.telegramId) continue;
-
-      // Header qismi
-      let message = `  📦 ЯНГИ МАҲСУЛОТЛАР   \n\n`;
-
-
-      // Mahsulotlar ro'yxati
-      products.forEach((product, index) => {
-        message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
-        message += `   ├─ 📦 Миқдор: ${product.count} Дона\n`;
-        // message += `   ├─ 🔢 Дона: ${product.count || 0}\n`;
-      });
-
-      // Footer qismi
-      message += `\n🕒 ${new Date().toLocaleString('uz-UZ', {
-        timeZone: 'Asia/Tashkent'
-      })
-        }`;
-
-      await bot.telegram.sendMessage(
-        user.telegramId,
-        message,
-        {
-          parse_mode: "HTML",
-          disable_web_page_preview: true
-        }
-      );
-    }
-    console.log("Sent");
-
-  } catch (err) {
-    console.error("Bot хабар юборишда хатолик:", err.message);
-  }
-};
-
-const sendBotNotificationV2 = async (products) => {
-  try {
-    const loggedUsers = await Users.find({ isLoggedIn: true }).lean();
-    if (!loggedUsers.length || !products.length) return;
-
-    for (const user of loggedUsers) {
-      if (!user.telegramId) continue;
-
-      let message = `📦 <b>МАҲСУЛОТ ЯНГИЛАНДИ</b>\n\n`;
-
-      products.forEach((product, index) => {
-        message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
-
-        if (product.addedCount) {
-          message += `   ├─ ➕ Қўшилди: ${product.addedCount} дона\n`;
-        }
-
-        message += `   ├─ 📦 Жами: ${product.totalCount} дона\n\n`;
-      });
-
-      message += `🕒 ${new Date().toLocaleString('uz-UZ', {
-        timeZone: 'Asia/Tashkent'
-      })}`;
-
-      await bot.telegram.sendMessage(user.telegramId, message, {
-        parse_mode: "HTML",
-        disable_web_page_preview: true
-      });
-    }
-
-    console.log("Bot хабар юборилди ✅");
-  } catch (err) {
-    console.error("Bot хабар юборишда хатолик:", err.message);
-  }
-};
-
-const sendBotNotificationV3 = async (products) => {
-  try {
-    const loggedUsers = await Users.find({
+    const users = await Users.find({
       isLoggedIn: true,
       telegramId: { $exists: true, $ne: null }
     }).lean();
 
-    if (!loggedUsers.length || !products?.length) return;
+    if (!users.length && !process.env.GROUP_ID) return;
 
-    const time = new Date().toLocaleString("uz-UZ", {
-      timeZone: "Asia/Tashkent"
-    });
+    const message = buildProductMessage(products);
 
-    for (const user of loggedUsers) {
-      let message = `📦 <b>ЯНГИ / ЯНГИЛАНГАН МАҲСУЛОТЛАР</b>\n`;
-      message += `━━━━━━\n\n`;
+    // 👤 USERLARGA
+    for (const user of users) {
+      try {
+        await bot.telegram.sendMessage(user.telegramId, message, {
+          parse_mode: "HTML",
+          disable_web_page_preview: false
+        });
+      } catch (err) {
+        console.error(`❌ Userga yuborilmadi (${user.telegramId}):`, err.message);
+      }
+    }
 
-      products.forEach((product, index) => {
-        message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
-        message += `   ├─ 🆔 АРТ: <code>${product.sku || "—"}</code>\n`;
-        message += `   ├─ 📂 Категория: ${product.category || "—"}\n`;
-        message += `   ├─ 📦 Қолдиқ: ${product.count ?? 0} дона\n`;
-        message += `   ├─ 🔥 Сотилган: ${product.sold ?? 0} дона\n`;
-        message += `   ├─ ✅ Мавжуд: ${product.isAvailable ? "Ҳа" : "Йўқ"}\n`;
-
-
-        if (product.mainImages?.length) {
-          message += `   ├─ 🖼 Расм: ${product.mainImages[0]}\n`;
-        }
-
-        message += `\n`;
-      });
-
-      message += `━━━━━━━━━━\n`;
-      message += `🕒 ${time}`;
-
-      await bot.telegram.sendMessage(user.telegramId, message, {
-        parse_mode: "HTML",
-        disable_web_page_preview: false
-      });
+    if (process.env.GROUP_ID) {
+      try {
+        await bot.telegram.sendMessage(process.env.GROUP_ID, message, {
+          parse_mode: "HTML",
+          disable_web_page_preview: false
+        });
+        console.log("👥 Groupga yuborildi ✅");
+      } catch (err) {
+        console.error("❌ Groupga yuborishda xatolik:", err.message);
+      }
     }
 
     console.log("✅ Bot хабарлари муваффақиятли юборилди");
   } catch (err) {
-    console.error("❌ Bot хабар юборишда хатолик:", err.message);
+    console.error("❌ Bot notification xatoligi:", err.message);
   }
 };
 
@@ -157,7 +106,7 @@ export const CreateNewProduct = async (req, res) => {
 
       await existingProduct.save();
 
-      sendBotNotificationV2([{
+      sendBotNotification([{
         title: existingProduct.title,
         addedCount: incomingCount,
         totalCount: existingProduct.count
@@ -183,7 +132,7 @@ export const CreateNewProduct = async (req, res) => {
       description: data.description || "",
       count: incomingCount
     });
-    sendBotNotificationV3([newProduct]);
+    sendBotNotification([newProduct]);
     return res.status(201).json({
       message: "Маҳсулот муваффақиятли яратилди ✅",
       product: newProduct,
@@ -215,18 +164,22 @@ export const GetAllProducts = async (req, res) => {
       page = 1,
       limit = 50,
       search = '',
-      searchField = '',
       category = '',
       date = ''
     } = req.query;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
     const query = {};
 
+    // 📂 Category filter
     if (category) {
       query.category = category;
     }
 
+    // 📅 Date filter
     if (date) {
       const startDate = new Date(date);
       startDate.setHours(0, 0, 0, 0);
@@ -240,6 +193,7 @@ export const GetAllProducts = async (req, res) => {
       };
     }
 
+    // 🔍 Search (title + sku)
     if (search) {
       const safeSearch = search.trim();
 
@@ -249,22 +203,36 @@ export const GetAllProducts = async (req, res) => {
       ];
     }
 
-
-
+    // 📊 TOTAL PRODUCT COUNT
     const total = await Product.countDocuments(query);
 
+    // 📦 TOTAL COUNT (sum of product.count)
+    const totalCountAgg = await Product.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          totalCount: { $sum: { $ifNull: ["$count", 0] } }
+        }
+      }
+    ]);
+
+    const totalCount = totalCountAgg[0]?.totalCount || 0;
+
+    // 📄 Products (pagination)
     const products = await Product.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
-
+      .limit(limitNum)
+      .lean({ virtuals: true })
     return res.status(200).json({
       data: products,
+      total,
+      totalCount,
       pagination: {
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / parseInt(limit))
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
       }
     });
 
@@ -276,6 +244,7 @@ export const GetAllProducts = async (req, res) => {
     });
   }
 };
+
 
 export const UpdateProduct = async (req, res) => {
   try {

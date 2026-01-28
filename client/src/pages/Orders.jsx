@@ -22,6 +22,7 @@ import {
   ChevronRight,
   ChevronLeft as ChevronLeftIcon,
   RefreshCw,
+  MoreVertical,
 } from 'lucide-react'
 import Fetch from '../middlewares/fetcher'
 import { AddNewOrder } from '../mod/OrderModal'
@@ -199,38 +200,77 @@ export const Orders = () => {
     }
   }
 
-  const handleDeleteClient = async id => {
-    const confirmMessage = `⚠️Сиз ростан ҳам бу клиентни ўчирмоқчимисиз?\n\nБу амални кейин тиклаб бўлмайди!`
-    const confirmed = window.confirm(confirmMessage)
-    if (!confirmed) return
+  const handleDeleteClient = async (clientId) => {
+    if (!clientId) return;
+
+    if (deleting === clientId) return;
+
+    const client = clients.find(c => c._id === clientId);
+    if (!client) {
+      alert("❌ Клиент топилмади");
+      return;
+    }
+
+    const firstConfirm = window.confirm(
+      `⚠️ ДИҚҚАТ!\n\nСиз ростан ҳам "${client.fullName}" мижозини ўчирмоқчимисиз?`
+    );
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm(
+      `❗ ОХИРГИ ОГОҲЛАНТИРИШ!\n\nБу мижозга тегишли БАРЧА буюртмалар ҳам ўчирилади.\nБу амални ОРҚАГА ҚАЙТАРИБ БЎЛМАЙДИ!`
+    );
+    if (!secondConfirm) return;
+
+    setDeleting(clientId);
+
+    const prevClients = [...clients];
+    const prevSelectedClient = selectedClient;
 
     try {
-      // Delete all orders for this client
-      const clientOrders = clients.find(c => c._id === id)?.orders || []
+      const orders = client.orders || [];
 
-      for (const order of clientOrders) {
-        await Fetch.delete(`/orders/${order._id}`)
+      const deleteResults = await Promise.allSettled(
+        orders.map(order =>
+          Fetch.delete(`/orders/${order._id}`)
+        )
+      );
+
+      const failedOrders = deleteResults.filter(
+        r => r.status === "rejected"
+      );
+
+      if (failedOrders.length) {
+        console.error("❌ O‘chmagan orderlar:", failedOrders);
+        throw new Error("Baʼzi buyurtmalar o‘chirilmadi");
       }
 
-      // Optimistic update
-      if (selectedClient?._id === id) {
-        setSelectedClient(null)
+      await Fetch.delete(`/clients/${clientId}`);
+
+
+      if (selectedClient?._id === clientId) {
+        setSelectedClient(null);
       }
 
-      // Mutate data
-      mutateOrders()
+      mutateOrders();
 
-      alert('✅ Мижоз ва унинг барча чиқимлари ўчирилди')
+      alert(`✅ "${client.fullName}" ва барча буюртмалари ўчирилди`);
+
     } catch (err) {
-      console.error('Delete client error:', err)
-      alert('❌ Мижозни ўчиришда хатолик юз берди.')
+      console.error("Delete client error:", err);
+
+      setSelectedClient(prevSelectedClient);
+
+      alert(
+        "❌ Ўчиришда хатолик юз берди.\nМаʼлумотлар қайта тикланди."
+      );
     } finally {
-      setDeleting(null)
+      setDeleting(null);
     }
-  }
+  };
 
 
 
+  const [showDeleteMenu, setShowDeleteMenu] = useState(null)
   // Xato holati
   if (ordersError) {
     return (
@@ -388,45 +428,60 @@ export const Orders = () => {
                           setSelectedClient(client)
                           setOrderPage(1)
                         }}
-                        className='rounded-2xl shadow-lg p-6 border hover:shadow-xl transition-all duration-300 cursor-pointer group bg-white border-gray-200 hover:border-blue-300'
+                        className='relative rounded-2xl shadow-lg p-6 border hover:shadow-xl transition-all duration-300 cursor-pointer group bg-white border-gray-200 hover:border-blue-300'
                       >
-                        <div className='flex items-start justify-between mb-4'>
-                          <div className='flex items-center gap-3'>
-                            <div className='bg-gradient-to-r from-blue-500 to-indigo-500 p-3 rounded-xl shadow-md group-hover:scale-110 transition-transform duration-300'>
-                              <User className='text-white' size={24} />
-                            </div>
-                            {user.role == "admin" &&
-                              <div
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex">
-                                <button
-                                  onClick={() => handleDeleteClient(client._id)}
-                                  className='p-2 bg-red-500 text-white rounded cursor-pointer hover:bg-red-600'
-                                ><Trash2 /></button>
-                              </div>}
-                            <div>
-                              <h3 className='font-bold text-lg text-gray-800'>{client.fullName || 'Номаълум'}</h3>
-                              <p className='text-sm text-gray-600'>{client.phoneNumber}</p>
-                            </div>
-                          </div>
-                          <div className='text-right'>
-                            <div className='flex items-center gap-1 text-green-600 font-semibold text-lg'>
-                              <Package size={18} />
-                              <span>{stats.totalOrders}</span>
-                            </div>
-                            <div className='text-xs text-gray-600'>чиқим</div>
-                          </div>
-                        </div>
+                        {/* More button (three dots) - faqat admin uchun */}
+                        {user.role === "admin" && (
+                          <div
+                            className='absolute top-4 right-4'
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={() => setShowDeleteMenu(showDeleteMenu === client._id ? null : client._id)}
+                              className='p-2 hover:bg-gray-100 rounded-lg transition-colors'
+                            >
+                              <MoreVertical size={20} className='text-gray-500' />
+                            </button>
 
-                        <div className='flex items-center gap-2 text-sm mb-3'>
-                          <MapPin size={16} className='text-gray-600' />
-                          <span className='truncate text-gray-600'>{client.address || 'Манзил кўрсатилмаган'}</span>
+                            {/* Delete menu - faqat showDeleteMenu === client._id bo'lsa ko'rinadi */}
+                            {showDeleteMenu === client._id && (
+                              <div className='absolute right-0 top-10 bg-white rounded-lg shadow-lg border border-gray-200 z-10 min-w-[120px]'>
+                                <button
+                                  onClick={() => {
+                                    handleDeleteClient(client._id)
+                                    setShowDeleteMenu(null)
+                                  }}
+                                  className='flex items-center gap-2 w-full px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors'
+                                >
+                                  <Trash2 size={16} />
+                                  <span>Ўчириш</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className='flex items-start gap-3 mb-4'>
+                          <div className='bg-gradient-to-r from-blue-500 to-indigo-500 p-3 rounded-xl shadow-md group-hover:scale-110 transition-transform duration-300'>
+                            <User className='text-white' size={24} />
+                          </div>
+                          <div className='flex-1'>
+                            <h3 className='font-bold text-lg text-gray-800'>{client.fullName || 'Номаълум'}</h3>
+                            <p className='text-sm text-gray-600'>{client.phoneNumber}</p>
+                          </div>
+
                         </div>
 
                         <div className='space-y-2 mb-4'>
                           <div className='flex justify-between items-center'>
                             <span className='text-sm text-gray-600'>Жами сумма:</span>
                             <span className='font-bold text-green-600'>{stats.totalAmount.toLocaleString()} сўм</span>
+                          </div>
+                        </div>
+                        <div className='text-right'>
+                          <div className='flex items-center gap-1 text-green-600 font-semibold text-lg'>
+                            <Package size={18} />
+                            <span>{stats.totalOrders}</span>
                           </div>
                         </div>
                       </motion.div>

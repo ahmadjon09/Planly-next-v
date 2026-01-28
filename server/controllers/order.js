@@ -36,72 +36,103 @@ export const AllOrders = async (_, res) => {
     sendErrorResponse(res, 500, 'Server Error');
   }
 };
+const buildOrderMessage = (order, productsMap, clientInfo) => {
+  let message = `📝 <b>ЯНГИ БУЮРТМА</b>\n`;
+  message += `━━━━━━\n\n`;
+
+  // 👤 Client info
+  if (clientInfo) {
+    message += `👤 Мижоз: <b>${clientInfo.fullName || "—"}</b>\n`;
+    if (clientInfo.phoneNumber) {
+      message += `📞 Телефон: <b>${clientInfo.phoneNumber}</b>\n`;
+    }
+    message += `\n`;
+  }
+
+  // 📦 Products
+  order.products.forEach((p, idx) => {
+    const productData = productsMap[p.product.toString()];
+    const title = productData?.title || "—";
+
+    message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
+    message += `   ├─ 🆔 АРТ: <code>${productData?.sku || "—"}</code>\n`;
+    message += `   ├─ 📦 Миқдор: ${p.quantity} дона\n`;
+    message += `   └─ 💰 Нархи: <b>${p.price}</b>\n\n`;
+  });
+
+  // 🕒 Time
+  message += `━━━━━━━━━━\n`;
+  message += `🕒 ${new Date().toLocaleString("uz-UZ", {
+    timeZone: "Asia/Tashkent"
+  })}`;
+
+  return message;
+};
 
 const sendOrderNotification = async (order) => {
   try {
-    const loggedUsers = await User.find({ isLoggedIn: true }).lean();
-    if (!loggedUsers.length) return;
-    if (!order.products || !order.products.length) return;
+    if (!order?.products?.length) return;
 
-    // Product IDларни йиғиб, уларни базадан олиш
+    // 👤 Logged users
+    const users = await User.find({
+      isLoggedIn: true,
+      telegramId: { $exists: true, $ne: null }
+    }).lean();
+
+    // 📦 Products from DB
     const productIds = order.products.map(p => p.product);
-    const productsMap = {};
-    const productsFromDB = await Product.find({ _id: { $in: productIds } }).lean();
-    productsFromDB.forEach(p => { productsMap[p._id.toString()] = p; });
+    const productsFromDB = await Product.find({
+      _id: { $in: productIds }
+    }).lean();
 
-    // Client ma'lumotini olish
+    const productsMap = {};
+    productsFromDB.forEach(p => {
+      productsMap[p._id.toString()] = p;
+    });
+
+    // 👤 Client
     let clientInfo = null;
     if (order.client) {
       clientInfo = await Client.findById(order.client).lean();
     }
 
-    for (const user of loggedUsers) {
-      if (!user.telegramId) continue;
+    const message = buildOrderMessage(order, productsMap, clientInfo);
 
-      // Header
-      let message = `   📝 ЯНГИ БУЮРТМА   \n\n`;
-
-
-      // Client haqida
-      if (clientInfo) {
-        message += `👤 Мижоз: <b>${clientInfo.fullName || "?????"}</b>\n`;
-        if (clientInfo.phoneNumber) {
-          message += `📞 Телефон: <b>${clientInfo.phoneNumber}</b>\n`;
-        }
-        message += `\n`;
-      }
-
-      // Mahsulotlar ro'yxati
-      order.products.forEach((p, idx) => {
-        const productData = productsMap[p.product.toString()];
-        const title = productData?.title || "?????";
-
-        message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
-        message += `   ├─ 🆔 АРТ: <code>${productData?.sku || "—"}</code>\n`;
-        message += `   ├─ 📦 Миқдор: ${p.quantity} Дона\n`;
-        message += `   └─ 💰 Нархи: <b>${p.price}</b>\n\n`;
-      });
-
-      // Footer
-      message += `\n🕒 ${new Date().toLocaleString('uz-UZ', {
-        timeZone: 'Asia/Tashkent'
-      })
-        }`;
-
-      await bot.telegram.sendMessage(
-        user.telegramId,
-        message,
-        {
+    // 👤 USERLARGA
+    for (const user of users) {
+      try {
+        await bot.telegram.sendMessage(user.telegramId, message, {
           parse_mode: "HTML",
           disable_web_page_preview: true
-        }
-      );
+        });
+      } catch (err) {
+        console.error(
+          `❌ Userga yuborilmadi (${user.telegramId}):`,
+          err.message
+        );
+      }
     }
 
+    // 👥 GROUP GA
+    if (process.env.GROUP_ID) {
+      try {
+        await bot.telegram.sendMessage(process.env.GROUP_ID, message, {
+          parse_mode: "HTML",
+          disable_web_page_preview: true
+        });
+        console.log("👥 Buyurtma groupga yuborildi ✅");
+      } catch (err) {
+        console.error("❌ Groupga yuborishda xatolik:", err.message);
+      }
+    }
+
+    console.log("✅ Buyurtma notification yuborildi");
   } catch (err) {
-    console.error("Bot хабар юборишда хатолик:", err.message);
+    console.error("❌ Buyurtma bot xatoligi:", err.message);
   }
 };
+
+
 
 export const NewOrder = async (req, res) => {
   const session = await mongoose.startSession();
