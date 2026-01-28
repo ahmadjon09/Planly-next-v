@@ -36,6 +36,7 @@ export const AllOrders = async (_, res) => {
     sendErrorResponse(res, 500, 'Server Error');
   }
 };
+
 const buildOrderMessage = (order, productsMap, clientInfo) => {
   let message = `📝 <b>ЯНГИ БУЮРТМА</b>\n`;
   message += `━━━━━━\n\n`;
@@ -131,8 +132,6 @@ const sendOrderNotification = async (order) => {
     console.error("❌ Buyurtma bot xatoligi:", err.message);
   }
 };
-
-
 
 export const NewOrder = async (req, res) => {
   const session = await mongoose.startSession();
@@ -250,8 +249,6 @@ export const NewOrder = async (req, res) => {
   }
 };
 
-
-
 export const CancelOrder = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -262,6 +259,7 @@ export const CancelOrder = async (req, res) => {
       return sendErrorResponse(res, 404, "Буюртма топилмади!");
     }
 
+    // productsni stokga qaytarish
     const bulkOps = order.products.map(item => ({
       updateOne: {
         filter: { _id: item.product },
@@ -275,10 +273,15 @@ export const CancelOrder = async (req, res) => {
     }));
 
     await Product.bulkWrite(bulkOps, { session });
+
+    // orderni o‘chirish
     await Order.findByIdAndDelete(order._id).session(session);
 
     await session.commitTransaction();
     session.endSession();
+
+    // 🔥 Botga xabar yuborish
+    sendOrderCancelNotification(order);
 
     return res.json({
       message: "Буюртма бекор қилинди ❌"
@@ -289,6 +292,93 @@ export const CancelOrder = async (req, res) => {
     session.endSession();
     console.error(err);
     return sendErrorResponse(res, 500, "Сервер хатолиги");
+  }
+};
+
+// Bot xabari
+const sendOrderCancelNotification = async (order) => {
+  try {
+    if (!order) return;
+
+    // 👤 Logged users
+    const users = await User.find({
+      isLoggedIn: true,
+      telegramId: { $exists: true, $ne: null }
+    }).lean();
+
+    // 📦 Products from DB
+    const productIds = order.products.map(p => p.product);
+    const productsFromDB = await Product.find({
+      _id: { $in: productIds }
+    }).lean();
+
+    const productsMap = {};
+    productsFromDB.forEach(p => {
+      productsMap[p._id.toString()] = p;
+    });
+
+    // 👤 Client
+    let clientInfo = null;
+    if (order.client) {
+      clientInfo = await Client.findById(order.client).lean();
+    }
+
+    // message qurish
+    let message = `📝 <b>БУЮРТМА БЕКОР ҚИЛИНДИ ❌</b>\n`;
+    message += `━━━━━━\n\n`;
+
+    if (clientInfo) {
+      message += `👤 Мижоз: <b>${clientInfo.fullName || "—"}</b>\n`;
+      if (clientInfo.phoneNumber) {
+        message += `📞 Телефон: <b>${clientInfo.phoneNumber}</b>\n`;
+      }
+      message += `\n`;
+    }
+
+    order.products.forEach((p, idx) => {
+      const productData = productsMap[p.product.toString()];
+      const title = productData?.title || "—";
+
+      message += `▫️ <b>${idx + 1}. ${title}</b>\n`;
+      message += `   ├─ 🆔 АРТ: <code>${productData?.sku || "—"}</code>\n`;
+      message += `   ├─ 📦 Миқдор: ${p.quantity} дона\n`;
+      message += `   └─ 💰 Нархи: <b>${p.price}</b>\n\n`;
+    });
+
+    message += `━━━━━━━━━━\n`;
+    message += `🕒 ${new Date().toLocaleString("uz-UZ", {
+      timeZone: "Asia/Tashkent"
+    })}`;
+
+    // 👤 USERS
+    for (const user of users) {
+      try {
+        await bot.telegram.sendMessage(user.telegramId, message, {
+          parse_mode: "HTML",
+          disable_web_page_preview: true
+        });
+      } catch (err) {
+        console.error(`❌ Userga yuborilmadi (${user.telegramId}):`, err.message);
+      }
+    }
+
+    // 👥 GROUP
+    if (process.env.GROUP_ID) {
+      try {
+        await bot.telegram.sendMessage(process.env.GROUP_ID, message, {
+          parse_mode: "HTML",
+          disable_web_page_preview: true
+        });
+        console.log("👥 Buyurtma bekor groupga yuborildi ✅");
+      } catch (err) {
+        console.error("❌ Groupga yuborishda xatolik:", err.message);
+      }
+    }
+
+    console.log("✅ Buyurtma bekor notification yuborildi");
+
+  } catch (err) {
+    console.error("❌ Buyurtma bekor bot xatoligi:", err.message);
   }
 };
 

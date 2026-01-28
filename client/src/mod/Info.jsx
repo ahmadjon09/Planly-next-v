@@ -20,7 +20,7 @@ export const AboutModal = () => {
               <div className={dark ? 'bg-gray-700 p-2 rounded-xl' : 'bg-white/20 p-2 rounded-xl'}>
                 <Info size={24} className={dark ? 'text-white' : 'text-white'} />
               </div>
-              <h2 className='text-xl font-bold'>{dark ? 'Маълумот' : 'Маълумот'}</h2>
+              <h2 className='text-xl font-bold text-white'>{dark ? 'Маълумот' : 'Маълумот'}</h2>
             </div>
             <button
               onClick={() => setOpenX(false)}

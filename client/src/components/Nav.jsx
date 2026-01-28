@@ -27,6 +27,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { ContextData } from '../contextData/Context'
 import logo from '../assets/images/logo2.png'
 import { name } from '../assets/js/i'
+import { emojiRain } from '../assets/js/fun'
 
 export const Nav = () => {
   const { user, removeUserToken, dark, setDark } = useContext(ContextData)
@@ -166,10 +167,7 @@ export const Nav = () => {
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
           <Link
-            onDoubleClick={() => {
-              const current = localStorage.getItem("hide") === "true";
-              localStorage.setItem("hide", (!current).toString());
-            }}
+            onDoubleClick={() => emojiRain()}
 
             to={getDefaultPath()}>
             <motion.img

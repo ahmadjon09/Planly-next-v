@@ -5,6 +5,7 @@ import axios from 'axios'
 import ProductRoutes from './routes/product.js'
 import StatsRoutes from './routes/stats.js'
 import OrderRoutes from './routes/order.js'
+import ClientRoutes from './routes/client.js'
 import path from 'path'
 import UserRoutes from './routes/user.js'
 import dotenv from 'dotenv'
@@ -47,6 +48,7 @@ app.use('/api/users', UserRoutes)
 app.use('/api/stats', isExisted, IsAdmin, StatsRoutes)
 app.use('/api/products', ProductRoutes)
 app.use('/api/orders', OrderRoutes)
+app.use('/api/clients', ClientRoutes)
 app.use('/api/health', getSystemHealth)
 app.get('/api/system', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'health.html'))

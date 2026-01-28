@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import useSWR from 'swr';
 import {
     Bar, PieChart, Pie, Cell,
@@ -22,6 +22,7 @@ import {
 
 import Fetch from "../middlewares/fetcher";
 import { ContextData } from '../contextData/Context';
+import PdfExportButton from '../components/PdfExportButton';
 
 // Tarjimalar
 const categories = [
@@ -29,7 +30,6 @@ const categories = [
     { value: 'Баҳор-кузги', label: 'Баҳор-кузги', color: "#f585ff" },
     { value: 'Қишги', label: 'Қишги', color: "#0b84f5" },
 ];
-
 
 // Vaqt oraliklari tarjimasi
 const timeRanges = [
@@ -54,6 +54,7 @@ export default function DashboardPage() {
     const [activeChart, setActiveChart] = useState('revenue');
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
+    const dashboardRef = useRef(null);
 
     // Barcha API so'rovlarini yuklash
     const { data: dashboardData, mutate: mutateDashboard, isLoading: dashboardLoading } = useSWR(
@@ -380,9 +381,21 @@ export default function DashboardPage() {
             </div>
         );
     }
+    const pdfData = {
+        dashboardData,
+        widgetsData,
+        trendData,
+        categoryData,
+        monthlyData,
+        productStats,
+        realtimeData
+    };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6">
+        <div
+            ref={dashboardRef} // ✅ FAQAT BU QO'SHILADI
+            className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 md:p-6"
+        >
             {/* Header */}
             <div className="mb-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
@@ -401,6 +414,14 @@ export default function DashboardPage() {
                                 Онлайн
                             </span>
                         </div>
+                    </div>
+
+                    <div className="mt-4 md:mt-0">
+                        <PdfExportButton
+                            dashboardData={pdfData}
+                            fileName={`dashboard-report-${new Date().toISOString().split('T')[0]}`}
+                            title="Дашбоард Статистика Хисоботи"
+                        />
                     </div>
                 </div>
 
@@ -854,7 +875,7 @@ export default function DashboardPage() {
                 <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm p-6 border border-gray-200">
                     <div className="flex items-center justify-between mb-6">
                         <div>
-                            <h2 className="text-lg font-semibold text-gray-900">Соҳангӣ фаолият</h2>
+                            <h2 className="text-lg font-semibold text-gray-900">Охирги фаолият</h2>
                             <p className="text-sm text-gray-500">Сўнгги 24 соатдаги буюртмалар</p>
                         </div>
                         <Zap className="w-5 h-5 text-yellow-500" />

@@ -243,9 +243,6 @@ export const Workers = () => {
                     <th className={`py-5 px-8 text-left text-sm font-semibold uppercase tracking-wider ${tableHeaderText}`}>
                       Лавозим
                     </th>
-                    <th className={`py-5 px-8 text-left text-sm font-semibold uppercase tracking-wider ${tableHeaderText}`}>
-                      Склад
-                    </th>
                     {user.owner && (
                       <th className={`py-5 px-8 text-center text-sm font-semibold uppercase tracking-wider ${tableHeaderText}`}>
                         Амаллар
@@ -325,9 +322,7 @@ export const Workers = () => {
                           {getRoleText(worker)}
                         </span>
                       </td>
-                      <td className='py-5 px-12'>
-                        <Circle size={18} color={` ${worker.ability == "ready" ? "blue" : worker.ability == "!ready" ? "red" : "green"}`} />
-                      </td>
+
                       {/* Actions */}
                       {user.owner && (
                         <td className='py-5 px-8 text-center'>

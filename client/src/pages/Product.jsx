@@ -758,12 +758,8 @@ export const ProductsPage = () => {
 
                 {/* Pagination */}
                 {pagination.totalPages > 1 && (
-                  <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                      <div className="text-sm text-gray-600">
-                        Кўрсатилган: {(page - 1) * 50 + 1}-{Math.min(page * 50, pagination.total)}/{pagination.total}
-                      </div>
-
+                  <div className="px-6 py-4 w-full flex justify-center border-t border-gray-200 bg-gray-50">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handlePageChange(page - 1)}
@@ -960,10 +956,6 @@ export const ProductsPage = () => {
                 {pagination.totalPages > 1 && (
                   <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
                     <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                      <div className="text-sm text-gray-600">
-                        Кўрсатилган: {(page - 1) * 50 + 1}-{Math.min(page * 50, pagination.total)}/{pagination.total}
-                      </div>
-
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handlePageChange(page - 1)}

@@ -9,7 +9,7 @@ import {
 
 const router = express.Router()
 
-router.get('/', isExisted, AllOrders)
+// router.get('/', isExisted, AllOrders)
 router.put('/:id', isExisted, UpdateOrder)
 router.post('/new', isExisted, NewOrder)
 router.delete('/:id', isExisted, CancelOrder)

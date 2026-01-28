@@ -8,19 +8,30 @@ const buildProductMessage = (products) => {
     timeZone: "Asia/Tashkent"
   });
 
-  let message = `📦 <b>ЯНГИ / ЯНГИЛАНГАН МАҲСУЛОТЛАР</b>\n`;
+  let message = products.removed ? `❌ ЎЧИРИЛДИ\n` : `📦 <b>ЯНГИ / ЯНГИЛАНГАН МАҲСУЛОТЛАР</b>\n`;
   message += `━━━━━━\n\n`;
 
   products.forEach((product, index) => {
     message += `▫️ <b>${index + 1}. ${product.title}</b>\n`;
-    message += `   ├─ 🆔 АРТ: <code>${product.sku || "—"}</code>\n`;
-    message += `   ├─ 📂 Категория: ${product.category || "—"}\n`;
-    message += `   ├─ 📦 Қолдиқ: ${product.count ?? 0} дона\n`;
-    message += `   ├─ 🔥 Сотилган: ${product.sold ?? 0} дона\n`;
-    message += `   ├─ ✅ Мавжуд: ${product.isAvailable ? "Ҳа" : "Йўқ"}\n`;
+
+    if (product.sku) {
+      message += `   ├─ 🆔 АРТ: <code>${product.sku}</code>\n`;
+    }
 
     if (product.addedCount) {
       message += `   ├─ ➕ Қўшилди: ${product.addedCount} дона\n`;
+    }
+
+    if (product.removed) {
+      message += `   ├─ ❌ ЎЧИРИЛДИ\n`;
+    }
+
+    if (product.category) {
+      message += `   ├─ 📂 Категория: ${product.category}\n`;
+    }
+
+    if (typeof product.count === "number") {
+      message += `   ├─ 📦 Қолдиқ: ${product.count} дона\n`;
     }
 
     if (product.mainImages?.length) {
@@ -61,6 +72,7 @@ const sendBotNotification = async (products) => {
       }
     }
 
+    // 👥 GROUPGA
     if (process.env.GROUP_ID) {
       try {
         await bot.telegram.sendMessage(process.env.GROUP_ID, message, {
@@ -73,12 +85,11 @@ const sendBotNotification = async (products) => {
       }
     }
 
-    console.log("✅ Bot хабарлари муваффақиятли юборилди");
+    console.log("✅ Bot habarlar muvaffaqiyatli yuborildi");
   } catch (err) {
     console.error("❌ Bot notification xatoligi:", err.message);
   }
 };
-
 
 export const CreateNewProduct = async (req, res) => {
   try {
@@ -101,16 +112,24 @@ export const CreateNewProduct = async (req, res) => {
        2️⃣ Agar product mavjud bo‘lsa
     ======================= */
     if (existingProduct) {
-      existingProduct.count =
-        (existingProduct.count || 0) + incomingCount;
+      const oldCount = existingProduct.count || 0;
+      const addedCount = incomingCount > 0 ? incomingCount : 0;
 
+      existingProduct.count = oldCount + incomingCount;
       await existingProduct.save();
 
-      sendBotNotification([{
-        title: existingProduct.title,
-        addedCount: incomingCount,
-        totalCount: existingProduct.count
-      }]);
+      // agar yangi miqdor oshsa, botga yubor
+      if (addedCount > 0) {
+        sendBotNotification([{
+          title: existingProduct.title,
+          sku: existingProduct.sku,
+          category: existingProduct.category,
+          mainImages: existingProduct.mainImages,
+          count: existingProduct.count,
+          addedCount
+        }]);
+      }
+
       return res.status(200).json({
         message: "Маҳсулот миқдори янгиланди ✅",
         product: existingProduct,
@@ -132,7 +151,17 @@ export const CreateNewProduct = async (req, res) => {
       description: data.description || "",
       count: incomingCount
     });
-    sendBotNotification([newProduct]);
+
+    // yangi product botga
+    sendBotNotification([{
+      title: newProduct.title,
+      sku: newProduct.sku,
+      category: newProduct.category,
+      mainImages: newProduct.mainImages,
+      count: newProduct.count,
+      addedCount: incomingCount
+    }]);
+
     return res.status(201).json({
       message: "Маҳсулот муваффақиятли яратилди ✅",
       product: newProduct,
@@ -153,8 +182,6 @@ export const CreateNewProduct = async (req, res) => {
     });
   }
 };
-
-
 
 
 
@@ -219,7 +246,6 @@ export const GetAllProducts = async (req, res) => {
 
     const totalCount = totalCountAgg[0]?.totalCount || 0;
 
-    // 📄 Products (pagination)
     const products = await Product.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -304,10 +330,22 @@ export const UpdateProduct = async (req, res) => {
 export const DeleteProduct = async (req, res) => {
   const { id } = req.params
   try {
-    const deletedProduct = await Product.findByIdAndDelete(id)
-    if (!deletedProduct) {
-      return sendErrorResponse(res, 404, 'Mahsulot topilmadi.')
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ message: "Маҳсулот топилмади!" });
     }
+
+    await product.deleteOne();
+
+    sendBotNotification([{
+      title: product.title,
+      sku: product.sku,
+      category: product.category,
+      mainImages: product.mainImages,
+      count: product.count,
+      removed: true
+    }]);
     return res
       .status(200)
       .json({ message: 'Mahsulot muvaffaqiyatli o‘chirildi.' })
