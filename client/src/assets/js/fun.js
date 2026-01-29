@@ -2,11 +2,10 @@ let moodIndex = 0;
 
 export function emojiRain() {
     const moods = [
-        ["😀", "😂", "😍", "🤩", "🥳", "😎"]
+        ["vebox.uz"]
     ];
 
     const emojis = moods[moodIndex];
-    moodIndex = (moodIndex + 1) % moods.length;
 
     for (let i = 0; i < 35; i++) {
         const span = document.createElement("span");

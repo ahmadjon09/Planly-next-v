@@ -113,13 +113,13 @@ export const CreateNewProduct = async (req, res) => {
     ======================= */
     if (existingProduct) {
       const oldCount = existingProduct.count || 0;
-      const addedCount = incomingCount > 0 ? incomingCount : 0;
+      const addedCount = incomingCount
 
       existingProduct.count = oldCount + incomingCount;
       await existingProduct.save();
 
       // agar yangi miqdor oshsa, botga yubor
-      if (addedCount > 0) {
+      if (incomingCount) {
         sendBotNotification([{
           title: existingProduct.title,
           sku: existingProduct.sku,
@@ -192,7 +192,8 @@ export const GetAllProducts = async (req, res) => {
       limit = 50,
       search = '',
       category = '',
-      date = ''
+      date = '',
+      type = 'all'
     } = req.query;
 
     const pageNum = parseInt(page);
@@ -219,7 +220,13 @@ export const GetAllProducts = async (req, res) => {
         $lte: endDate
       };
     }
+    if (type === 'in-stock') {
+      query.count = { $gt: 0 }; // count > 0
+    }
 
+    if (type === 'out-of-stock') {
+      query.count = { $eq: 0 }; // count === 0
+    }
     // 🔍 Search (title + sku)
     if (search) {
       const safeSearch = search.trim();

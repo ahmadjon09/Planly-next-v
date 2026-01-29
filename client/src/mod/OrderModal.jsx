@@ -29,7 +29,11 @@ import {
   Edit2,
   UserPlus,
   Flashlight,
-  FlashlightOff
+  FlashlightOff,
+  ChevronDown,
+  Filter,
+  List,
+  Grid
 } from 'lucide-react'
 import jsQR from 'jsqr'
 import Fetch from '../middlewares/fetcher'
@@ -73,6 +77,7 @@ export const AddNewOrder = () => {
   const [showClientsList, setShowClientsList] = useState(false)
   const [isEditingClient, setIsEditingClient] = useState(false)
   const [flashlightOn, setFlashlightOn] = useState(false)
+
   // Scanner states
   const [showScanner, setShowScanner] = useState(false)
   const [scanning, setScanning] = useState(false)
@@ -82,6 +87,19 @@ export const AddNewOrder = () => {
   const [scannedProducts, setScannedProducts] = useState(new Set())
   const [isProcessingScan, setIsProcessingScan] = useState(false)
 
+  // Product search states
+  const [showProductSearch, setShowProductSearch] = useState(false)
+  const [products, setProducts] = useState([])
+  const [loadingProducts, setLoadingProducts] = useState(false)
+  const [productSearchQuery, setProductSearchQuery] = useState('')
+  const [productCategory, setProductCategory] = useState('')
+  const [productStockType, setProductStockType] = useState('all')
+  const [productDate, setProductDate] = useState('')
+  const [productPage, setProductPage] = useState(1)
+  const [productTotalPages, setProductTotalPages] = useState(1)
+  const [productViewMode, setProductViewMode] = useState('grid') // 'grid' or 'list'
+  const [selectedCategories, setSelectedCategories] = useState([])
+
   // Refs
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -89,20 +107,15 @@ export const AddNewOrder = () => {
   const scannerContainerRef = useRef(null)
   const fileInputRef = useRef(null)
   const scannedOnceRef = useRef(false)
-  const streamRef = useRef(null);
+  const streamRef = useRef(null)
 
   // Client data
-
-
   const [clientData, setClientData] = useState({
     clientId: "",
     name: '',
     phoneNumber: '',
     address: ''
   })
-
-
-
 
   // ✅ Fetch all orders for clients extraction
   const fetchAllOrders = useCallback(async () => {
@@ -158,6 +171,51 @@ export const AddNewOrder = () => {
     }).slice(0, 20)
   }, [clients, clientSearchQuery])
 
+  // ✅ Fetch products for search
+  const fetchProducts = useCallback(async (page = 1) => {
+    setLoadingProducts(true)
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '20',
+        search: productSearchQuery,
+        category: productCategory,
+        date: productDate,
+        type: productStockType
+      }).toString()
+
+      const response = await Fetch.get(`/products?${params}`)
+      const data = response.data
+
+      if (page === 1) {
+        setProducts(data.data || [])
+      } else {
+        setProducts(prev => [...prev, ...(data.data || [])])
+      }
+
+      setProductPage(page)
+      setProductTotalPages(data.pagination?.totalPages || 1)
+
+      // Extract unique categories
+      if (page === 1 && data.data) {
+        const categories = [...new Set(data.data.map(p => p.category).filter(Boolean))]
+        setSelectedCategories(categories)
+      }
+    } catch (err) {
+      console.error('❌ Маҳсулотларни олишда хатолик:', err)
+      setMessage({ type: 'error', text: 'Маҳсулотларни юклашда хатолик!' })
+    } finally {
+      setLoadingProducts(false)
+    }
+  }, [productSearchQuery, productCategory, productDate, productStockType])
+
+  // ✅ Handle product search
+  const handleProductSearch = useCallback((e) => {
+    e?.preventDefault()
+    fetchProducts(1)
+  }, [fetchProducts])
+
+  // ✅ Handle scanner search
   const handleScannerSearch = useCallback(async (modelId) => {
     if (!modelId.trim() || scannedProducts.has(modelId) || isProcessingScan) return
     setIsProcessingScan(true);
@@ -165,7 +223,6 @@ export const AddNewOrder = () => {
     setScannedProducts(prev => new Set([...prev, modelId]));
     try {
       const { data } = await Fetch.get(`/products/qr/scann/${modelId.trim()}`)
-
 
       if (data?.product) {
         const productTypeData = data.product
@@ -232,6 +289,55 @@ export const AddNewOrder = () => {
     }
   }, [selectedProducts, scannedProducts, isProcessingScan])
 
+  // ✅ Handle add product manually
+  const handleAddProduct = useCallback((product) => {
+    const existingIndex = selectedProducts.findIndex(
+      p => p.productId === product._id
+    )
+
+    if (existingIndex !== -1) {
+      setSelectedProducts(prev => {
+        const updated = [...prev]
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          quantity: updated[existingIndex].quantity + 1
+        }
+        return updated
+      })
+
+      setMessage({
+        type: 'success',
+        text: `✅ ${product.title} миқдори ортди (ҳозир: ${selectedProducts[existingIndex].quantity + 1})`
+      })
+    } else {
+      const newProduct = {
+        _id: `${Date.now()}-${product._id}-${product.model || product.sku}`,
+        productId: product._id,
+        title: product.title,
+        category: product.category,
+        model: product.model,
+        sku: product.sku,
+        color: product.color || '--',
+        size: product.size || '--',
+        style: product.style || '--',
+        price: product.price || 0,
+        quantity: 1,
+        count: product.count || 0,
+        images: product.images || [],
+        unit: product.unit || 'дона'
+      }
+
+      setSelectedProducts(prev => [...prev, newProduct])
+      setMessage({
+        type: 'success',
+        text: `✅ ${product.title} қўшилди (${product.sku})`
+      })
+    }
+
+    // Close modal if product added successfully
+    setShowProductSearch(false)
+  }, [selectedProducts])
+
   const startScan = async () => {
     stopScan()
     try {
@@ -273,7 +379,6 @@ export const AddNewOrder = () => {
       rafRef.current = null
     }
   }
-
 
   const toggleFlashlight = useCallback(async () => {
     if (!streamRef.current) return
@@ -392,8 +497,6 @@ export const AddNewOrder = () => {
     };
   }, [scanning, showScanner, handleScannerSearch]);
 
-
-
   // Camera to'liq ekran rejimi
   const toggleCameraFullscreen = () => {
     if (!scannerContainerRef.current) return
@@ -437,9 +540,6 @@ export const AddNewOrder = () => {
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
     }
   }, [])
-
-
-
 
   // ✅ Handle manual scanner input
   const handleManualScanner = useCallback((e) => {
@@ -514,7 +614,6 @@ export const AddNewOrder = () => {
       text: `✅ Мижоз танланди: ${client.fullName}`
     })
   }, [])
-
 
   // ✅ Handle clear client
   const handleClearClient = useCallback(() => {
@@ -655,7 +754,7 @@ export const AddNewOrder = () => {
           quantity: Number(p.quantity) || 0, // ✅ amount emas
           price: Number(p.price) || 0,
 
-          // 🔹 ixtiyoriy qo‘shimcha info (order schema’da bo‘lsa)
+          // 🔹 ixtiyoriy qo'shimcha info (order schema'da bo'lsa)
           model: p.model,
           unit: p.unit,
           variant: {
@@ -682,7 +781,6 @@ export const AddNewOrder = () => {
         payType,
       };
 
-
       await Fetch.post('/orders/new', orderData)
 
       setMessage({
@@ -693,7 +791,6 @@ export const AddNewOrder = () => {
       // Update SWR cache
       mutate('/orders')
       mutate('/products')
-
 
       // Reset form
       setSelectedProducts([])
@@ -730,6 +827,7 @@ export const AddNewOrder = () => {
   // ✅ Cleanup on unmount
   useEffect(() => {
     fetchAllOrders()
+    fetchProducts(1)
 
     return () => {
       stopScan()
@@ -738,8 +836,6 @@ export const AddNewOrder = () => {
       }
     }
   }, [fetchAllOrders])
-
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-4 md:p-6">
@@ -769,23 +865,30 @@ export const AddNewOrder = () => {
           </div>
         </div>
 
-
-
         <form onSubmit={handleSubmit} className='space-y-8'>
-          {/* Camera Scanner Section */}
+          {/* Product Selection Section */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
             <div className='flex flex-wrap gap-2 items-center justify-between mb-6'>
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2 mb-1">
-                  <Camera size={20} className='text-blue-500' />
-                  Камера Сканери
+                  <Package size={20} className='text-blue-500' />
+                  Маҳсулот танлаш
                 </h3>
                 <p className="text-gray-600">
-                  QR кодни камерага кўрсатинг ёки расм юкланг
+                  Сканнер ёки қўлда танлаб маҳсулот қўшинг
                 </p>
               </div>
 
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowProductSearch(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl transition-all duration-200"
+                >
+                  <Search size={16} />
+                  Қўлда танлаш
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -806,7 +909,7 @@ export const AddNewOrder = () => {
                   ) : (
                     <>
                       <Camera size={16} />
-                      Камерани очиш
+                      Сканнер очиш
                     </>
                   )}
                 </button>
@@ -818,7 +921,7 @@ export const AddNewOrder = () => {
               <div className="space-y-3">
                 <label className="text-sm font-semibold flex items-center gap-2 text-gray-800">
                   <QrCode size={16} className='text-blue-500' />
-                  Қўлда киритиш
+                  Қўлда киритиш (QR код)
                 </label>
                 <div className="relative">
                   <input
@@ -874,17 +977,6 @@ export const AddNewOrder = () => {
               </div>
             </div>
 
-            {/* Scanner Error */}
-            {scanError && (
-              <div className="mb-6 p-4 rounded-xl border border-red-200 bg-red-50 text-red-600">
-                <div className="flex items-center gap-2">
-                  <AlertCircle size={16} />
-                  <span className="font-medium">Хатолик:</span>
-                  <span>{scanError}</span>
-                </div>
-              </div>
-            )}
-
             {/* Selected Products */}
             {selectedProducts.length > 0 ? (
               <div className="mt-8">
@@ -935,8 +1027,16 @@ export const AddNewOrder = () => {
                 <Box size={48} className="mx-auto mb-3 text-gray-400" />
                 <p className="font-medium text-gray-600">Маҳсулотлар қўшилмаган</p>
                 <p className="text-sm text-gray-500 mt-1 mb-4">
-                  QR кодни сканнеринг ёки модель ID сини киритинг
+                  QR кодни сканнеринг ёки қўлда маҳсулот танланг
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setShowProductSearch(true)}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white rounded-xl font-medium transition-all"
+                >
+                  <Search size={16} />
+                  Маҳсулотларни танлаш
+                </button>
               </div>
             )}
           </div>
@@ -1268,7 +1368,7 @@ export const AddNewOrder = () => {
                       </>
                     )}
                     <button
-                      onClick={toggleFlashlight} // <-- shu o‘zgardi
+                      onClick={toggleFlashlight} // <-- shu o'zgardi
                       className='absolute bottom-10 right-10 text-white bg-green-500 p-4 rounded-2xl'
                     >
                       {flashlightOn ? <Flashlight /> : <FlashlightOff />}
@@ -1323,11 +1423,142 @@ export const AddNewOrder = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Product Search Modal */}
+      <AnimatePresence>
+        {showProductSearch && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className='fixed inset-0 overflow-y-hidden bg-black/90 backdrop-blur-sm z-[102] flex items-center justify-center p-4'
+            onClick={() => setShowProductSearch(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className='relative max-w-6xl w-full max-h-[90vh] bg-white rounded-2xl overflow-y-auto shadow-2xl'
+              onClick={e => e.stopPropagation()}
+            >
+              <div className='p-6 bg-gradient-to-r from-blue-600 to-green-600'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-3'>
+                    <Search className='h-6 w-6 text-white' />
+                    <h3 className='text-2xl font-bold text-white'>
+                      Маҳсулотларни танлаш
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setShowProductSearch(false)}
+                    className='p-2 hover:bg-white/20 rounded-lg transition-colors'
+                  >
+                    <X className='h-6 w-6 text-white' />
+                  </button>
+                </div>
+                <p className='text-blue-100 text-sm mt-2'>
+                  Излаш ёрдамида маҳсулотларни кўриб чиқиб, танланг
+                </p>
+              </div>
+
+              <div className='p-6 overflow-y-auto'>
+                {/* Search and Filters */}
+                <div className='mb-6 space-y-4'>
+                  <form onSubmit={handleProductSearch} className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="text"
+                      value={productSearchQuery}
+                      onChange={(e) => {
+                        setProductSearchQuery(e.target.value)
+                        handleProductSearch()
+                      }}
+                      placeholder="Ном, АРТ, модель ёки категория бўйича излаш..."
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                    />
+                    <button
+                      type="submit"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      <Search size={16} />
+                    </button>
+                  </form>
+
+                  <div className="flex flex-wrap gap-3">
+                    <div className="ml-auto flex items-center gap-2">
+                      <button
+                        onClick={() => setProductViewMode('grid')}
+                        className={`p-2 rounded-lg ${productViewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
+                        title="Grid view"
+                      >
+                        <Grid size={16} />
+                      </button>
+                      <button
+                        onClick={() => setProductViewMode('list')}
+                        className={`p-2 rounded-lg ${productViewMode === 'list' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
+                        title="List view"
+                      >
+                        <List size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Products List/Grid */}
+                {loadingProducts && productPage === 1 ? (
+                  <div className="text-center py-12">
+                    <Loader2 className="animate-spin mx-auto mb-4 text-blue-600" size={32} />
+                    <p className="text-gray-600">Маҳсулотлар юкланмоқда...</p>
+                  </div>
+                ) : products.length > 0 ? (
+                  <>
+                    <div className={`${productViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-4'}`}>
+                      {products.map((product) => (
+                        <ProductSearchItem
+                          key={product._id}
+                          product={product}
+                          viewMode={productViewMode}
+                          onAdd={handleAddProduct}
+                        />
+                      ))}
+                    </div>
+
+                    {productPage < productTotalPages && (
+                      <div className="mt-6 text-center">
+                        <button
+                          onClick={() => fetchProducts(productPage + 1)}
+                          disabled={loadingProducts}
+                          className="px-6 py-3 bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white rounded-xl font-medium disabled:opacity-50"
+                        >
+                          {loadingProducts ? (
+                            <>
+                              <Loader2 className="animate-spin inline mr-2" size={16} />
+                              Юкланмоқда...
+                            </>
+                          ) : (
+                            'Кўпроқ маҳсулотлар'
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-200">
+                    <Search size={48} className="mx-auto mb-4 text-gray-400" />
+                    <p className="font-medium text-gray-600 mb-2">Маҳсулотлар топилмади</p>
+                    <p className="text-gray-500">Бошқа параметрлар билан изланг ёки янги маҳсулот яратинг</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
-// ProductItem Component - Light mode ga optimallashtirildi
+// ProductItem Component
 const ProductItem = ({
   item,
   index,
@@ -1359,9 +1590,6 @@ const ProductItem = ({
 
     return num.toLocaleString('uz-UZ')
   }
-
-
-
 
   return (
     <>
@@ -1515,3 +1743,170 @@ const ProductItem = ({
     </>
   )
 }
+
+// ProductSearchItem Component
+const ProductSearchItem = ({ product, viewMode, onAdd }) => {
+  const [showImagePreview, setShowImagePreview] = useState(null)
+
+  const handleAdd = () => {
+    onAdd(product)
+  }
+
+  if (viewMode === 'grid') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all duration-200 "
+      >
+        <div className="flex items-start justify-between mb-3">
+          {product.images && product.images.length > 0 ? (
+            <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 mr-3">
+              <img
+                src={product.images[0]}
+                alt={product.title}
+                className="w-full h-full object-cover cursor-pointer"
+                onClick={() => setShowImagePreview(product.images[0])}
+              />
+            </div>
+          ) : (
+            <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center mr-3">
+              <Package className="text-gray-400" size={24} />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <h4 className="font-semibold text-gray-800 truncate">{product.title}</h4>
+            <div className="text-sm text-gray-600 mt-1">
+              <div className="flex items-center gap-2">
+                <span className="font-mono bg-gray-100 px-2 py-1 rounded">
+                  {product.sku}
+                </span>
+                {product.category && (
+                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                    {product.category}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-600">Омборда:</span>
+            <span className={`font-medium ${product.count > 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {product.count || 0} {product.unit || 'дона'}
+            </span>
+          </div>
+        </div>
+
+        <button
+          onClick={handleAdd}
+          disabled={product.count <= 0}
+          className={`w-full mt-4 py-2 rounded-lg font-medium transition-all ${product.count > 0
+            ? 'bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white'
+            : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+            }`}
+        >
+          {product.count > 0 ? 'Қўшиш' : 'Омборда йўқ'}
+        </button>
+      </motion.div>
+    )
+  }
+
+  // List view
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex items-center justify-between p-4  bg-white border border-gray-200 rounded-xl hover:shadow-sm transition-all duration-200"
+    >
+      <div className="flex items-center gap-4">
+        {product.images && product.images.length > 0 ? (
+          <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+            <img
+              src={product.images[0]}
+              alt={product.title}
+              className="w-full h-full object-cover cursor-pointer"
+              onClick={() => setShowImagePreview(product.images[0])}
+            />
+          </div>
+        ) : (
+          <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center">
+            <Package className="text-gray-400" size={20} />
+          </div>
+        )}
+
+        <div className="min-w-0">
+          <h4 className="font-semibold text-gray-800 truncate">{product.title}</h4>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-sm text-gray-600 font-mono">{product.sku}</span>
+            {product.category && (
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                {product.category}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-6">
+        <div className="text-right">
+          <div className="font-bold text-green-600">
+            {product.price?.toLocaleString()} сўм
+          </div>
+          <div className="text-sm text-gray-600">
+            Омборда: <span className={product.count > 0 ? 'text-green-600' : 'text-red-600'}>
+              {product.count || 0} {product.unit || 'дона'}
+            </span>
+          </div>
+        </div>
+
+        <button
+          onClick={handleAdd}
+          disabled={product.count <= 0}
+          className={`px-4 py-2 rounded-lg font-medium transition-all ${product.count > 0
+            ? 'bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white'
+            : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+            }`}
+        >
+          Қўшиш
+        </button>
+      </div>
+
+      {/* Image Preview Modal */}
+      <AnimatePresence>
+        {showImagePreview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className='fixed inset-0 bg-black/90 backdrop-blur-sm z-[103] flex items-center justify-center p-4'
+            onClick={() => setShowImagePreview(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className='relative max-w-4xl max-h-[90vh]'
+              onClick={e => e.stopPropagation()}
+            >
+              <img
+                src={showImagePreview}
+                alt='Preview'
+                className='w-full h-full object-contain rounded-lg'
+              />
+              <button
+                onClick={() => setShowImagePreview(null)}
+                className='absolute top-4 right-4 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors'
+              >
+                <X size={20} />
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  )
+}
+

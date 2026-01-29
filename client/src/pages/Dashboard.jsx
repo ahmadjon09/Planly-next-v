@@ -823,7 +823,9 @@ export default function DashboardPage() {
                                     <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group">
                                         <div className="flex items-center">
                                             <div className="w-8 h-8 flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-500 text-white rounded-lg font-bold mr-3 group-hover:scale-110 transition-transform">
-                                                {index + 1}
+                                                {product.mainImages ? (
+                                                    <img className='w-full h-full object-cover rounded-lg' src={product.mainImages} alt={product.title || product.productTitle} />
+                                                ) : index + 1}
                                             </div>
                                             <div>
                                                 <div className="font-medium text-sm text-gray-900 truncate max-w-[120px]">
@@ -838,7 +840,7 @@ export default function DashboardPage() {
                                         <div className="text-right">
                                             <div className="font-semibold">{formatNumber(product.sold || product.totalSold || 0)} дона</div>
                                             <div className="text-xs text-green-600">
-                                                {formatPrice(product.revenue || product.totalRevenue || 0)}
+                                                {/* {formatPrice(product.revenue || product.totalRevenue || 0)} */}
                                             </div>
                                         </div>
                                     </div>

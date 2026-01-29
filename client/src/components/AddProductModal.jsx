@@ -35,7 +35,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
     title: '',
     sku: '',
     price: '',
-    category: 'shoes',
+    category: 'Ёзги',
     gender: 'men',
     season: 'all',
     material: 'Unknown',
@@ -601,15 +601,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                 </button>
               </div>
 
-              {/* АРТ Status Indicator */}
-              {checkingSku && (
-                <div className={`p-4 rounded-xl ${dark ? 'bg-blue-900/30 border-blue-700' : 'bg-blue-50 border-blue-200'} border`}>
-                  <div className='flex items-center gap-3'>
-                    <Loader2 className='h-5 w-5 animate-spin text-blue-500' />
-                    <p className='text-blue-600 dark:text-blue-300'>АРТ текширилмоқда...</p>
-                  </div>
-                </div>
-              )}
+
 
               {skuStatus === 'exists' && existingProduct && (
                 <motion.div
@@ -645,25 +637,7 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                 </motion.div>
               )}
 
-              {skuStatus === 'not_found' && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`p-4 rounded-xl ${dark ? 'bg-blue-900/30 border-blue-700' : 'bg-blue-50 border-blue-200'} border`}
-                >
-                  <div className='flex items-start gap-3'>
-                    <AlertCircle className='h-5 w-5 text-blue-500 mt-0.5' />
-                    <div>
-                      <p className='font-semibold text-blue-600 dark:text-blue-400'>
-                        🔍 Бу АРТ билан маҳсулот топилмади
-                      </p>
-                      <p className='text-sm text-blue-600 dark:text-blue-400 mt-1'>
-                        Янги маҳсулот сифатида қўшилиши учун барча майдонларни тўлдиринг.
-                      </p>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
+
 
               {/* Main Form */}
               <motion.div
@@ -704,6 +678,12 @@ export default function AddProductModal({ open, setOpen, mutate }) {
                           required
                           disabled={skuStatus === 'exists'}
                         />
+                        {checkingSku &&
+                          <div
+                            className='absolute right-10 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600'
+                          >
+                            <Loader2 size={18} className='animate-spin' />
+                          </div>}
                         {productData.sku && (
                           <button
                             type='button'

@@ -1,13 +1,12 @@
 import { useState, useContext, useEffect, useMemo, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
 import useSWR from 'swr'
+import dayjs from "dayjs";
 import {
   Boxes,
   Loader2,
   Plus,
   Save,
   Eye,
-  Hash,
   Tag,
   Package,
   Calendar,
@@ -26,7 +25,8 @@ import {
   X,
   AlertCircle,
   Check,
-  RefreshCw
+  RefreshCw,
+  Calculator
 } from 'lucide-react'
 import Fetch from '../middlewares/fetcher'
 import AddProductModal from '../components/AddProductModal'
@@ -36,14 +36,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 export const ProductsPage = () => {
   const { user } = useContext(ContextData)
-  const { type } = useParams()
-  const navigate = useNavigate()
   const fileInputRef = useRef(null)
 
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [searchField, setSearchField] = useState('title')
   const [category, setCategory] = useState('')
+  const [type, setType] = useState('all')
   const [searchDate, setSearchDate] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -83,8 +82,9 @@ export const ProductsPage = () => {
     params.append('searchField', searchField)
     if (category) params.append('category', category)
     if (searchDate) params.append('date', searchDate)
+    if (type) params.append('type', type)
     return `/products?${params.toString()}`
-  }, [page, debouncedSearch, searchField, category, searchDate])
+  }, [page, debouncedSearch, searchField, category, type, searchDate])
 
   const { data, error, isLoading, mutate } = useSWR(apiEndpoint, Fetch, {
     revalidateOnFocus: false,
@@ -543,7 +543,18 @@ export const ProductsPage = () => {
                   ))}
                 </select>
               </div>
-
+              <div className="relative">
+                <Calculator className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                <select
+                  value={type}
+                  onChange={e => setType(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all duration-300 bg-gray-50 border-gray-300"
+                >
+                  <option value="all">Барчаси</option>
+                  <option value="in-stock">Мавжуд</option>
+                  <option value="out-of-stock">Тугаган</option>
+                </select>
+              </div>
               <div className="relative">
                 <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -563,6 +574,7 @@ export const ProductsPage = () => {
                   setCategory('')
                   setSearchDate('')
                   setSearchField('title')
+                  setType('all')
                 }}
                 className="w-full py-3 border rounded-xl font-medium transition-colors bg-gray-100 hover:bg-gray-200 text-gray-800 border-gray-300"
               >
@@ -613,7 +625,7 @@ export const ProductsPage = () => {
                           Сотилган
                         </th>
                         <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
-                          Ҳолат
+                          Сана
                         </th>
                         <th className="px-6 py-4 text-left text-sm font-semibold uppercase tracking-wider">
                           QR
@@ -689,18 +701,9 @@ export const ProductsPage = () => {
                             </div>
                           </td>
 
-                          {/* Status */}
+                          {/* Date */}
                           <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              {product.count != 0 ? (
-                                <CheckCircle size={16} className="text-green-500" />
-                              ) : (
-                                <XCircle size={16} className="text-red-500" />
-                              )}
-                              <span className={`font-medium ${product.count != 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                {product.count != 0 ? 'Мавжуд' : 'Тугаган'}
-                              </span>
-                            </div>
+                            {dayjs(product.createdAt).format("DD.MM.YYYY HH:mm")}
                           </td>
 
                           {/* QR Code */}
@@ -858,7 +861,8 @@ export const ProductsPage = () => {
                             <div className="flex items-center gap-3">
                               {product.mainImages && product.mainImages.length > 0 ? (
                                 <div
-                                  className="relative h-12 w-12 rounded-lg overflow-hidden">
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="relative h-12 min-w-12 w-12 rounded-lg overflow-hidden">
                                   <img
                                     onClick={() => openPreview(product.mainImages, 0)}
                                     src={product.mainImages[0]}
@@ -867,7 +871,7 @@ export const ProductsPage = () => {
                                   />
                                 </div>
                               ) : (
-                                <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
+                                <div className="h-12 min-w-12 rounded-lg bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
                                   <ImageIcon className="h-6 w-6 text-gray-400" />
                                 </div>
                               )}
@@ -1283,6 +1287,12 @@ export const ProductsPage = () => {
                               АРТ:
                             </label>
                             <p className="font-medium text-gray-800">{viewData.sku}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-gray-600 block mb-1">
+                              Сана:
+                            </label>
+                            <p className="font-medium text-gray-800">{dayjs(viewData.createdAt).format("DD.MM.YYYY HH:mm")}</p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-gray-600 block mb-1">
