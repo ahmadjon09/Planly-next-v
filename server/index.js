@@ -32,7 +32,6 @@ const getLocalIP = () => {
 };
 const app = express()
 
-app.use(cors())
 app.use(express.json())
 
 app.use(cors({
@@ -49,8 +48,9 @@ app.use(cors({
 app.options('*', cors())
 
 app.get('/', (req, res) => {
-  res.redirect('https://shoemaster.uz/')
+  res.send('API is running')
 })
+
 
 app.get('/api/status', (_, res) => {
   setImmediate(() => {
