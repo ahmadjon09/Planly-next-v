@@ -31,27 +31,11 @@ const getLocalIP = () => {
   return "127.0.0.1";
 };
 const app = express()
-
+app.use(cors())
 app.use(express.json())
 
-app.use(cors({
-  origin: [
-    'https://shoemaster.vercel.app',
-    'https://www.shoemaster.uz',
-    'https://shoemaster.uz',
-    'http://shoemaster.uz',
-    'http://localhost:5173',
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}))
 
-app.options('*', cors())
 
-app.get('/', (req, res) => {
-  res.send('API is running')
-})
 
 
 app.get('/api/status', (_, res) => {
