@@ -36,7 +36,7 @@ app.use(cors())
 app.use(express.json())
 
 app.get('/', (req, res) => {
-  res.redirect('http://shoemaster.uz/')
+  res.redirect('https://shoemaster.uz/')
 })
 
 app.get('/api/status', (_, res) => {
