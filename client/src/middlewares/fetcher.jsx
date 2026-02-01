@@ -2,7 +2,7 @@ import axios from 'axios'
 import Cookies from 'js-cookie'
 
 const origin = window.location.origin;
-const BASE_URL = `https://www.shoemaster.uz/api`
+const BASE_URL = `https://shoemaster-cgo0.onrender.com/api`
 // const BASE_URL = `${origin}/api`
 
 
