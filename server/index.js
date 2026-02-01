@@ -38,7 +38,9 @@ app.use(cors({
   origin: [
     'https://shoemaster.vercel.app',
     'https://www.shoemaster.uz',
-    'https://shoemaster.uz'
+    'https://shoemaster.uz',
+    'http://shoemaster.uz',
+    'http://localhost:5173',
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
