@@ -9,15 +9,15 @@ import ClientRoutes from './routes/client.js'
 import path from 'path'
 import UserRoutes from './routes/user.js'
 import dotenv from 'dotenv'
-import { fileURLToPath } from 'url'
+
 import { getSystemHealth } from './controllers/health.js'
 import os from "os"
 import isExisted from './middlewares/isExisted.js'
 import IsAdmin from './middlewares/IsAdmin.js'
 
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+
+
 dotenv.config()
 const getLocalIP = () => {
   const nets = os.networkInterfaces();
@@ -34,6 +34,19 @@ const app = express()
 
 app.use(cors())
 app.use(express.json())
+
+app.use(cors({
+  origin: [
+    'https://shoemaster.vercel.app',
+    'https://www.shoemaster.uz',
+    'https://shoemaster.uz'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}))
+
+app.options('*', cors())
 
 app.get('/', (req, res) => {
   res.redirect('https://shoemaster.uz/')
