@@ -28,6 +28,7 @@ import { ContextData } from '../contextData/Context'
 import logo from '../assets/images/logo2.png'
 import { name } from '../assets/js/i'
 import { emojiRain } from '../assets/js/fun'
+import { LanguageSwitcher } from './LanguageSwitcher'
 
 export const Nav = () => {
   const { user, removeUserToken, dark, setDark } = useContext(ContextData)
@@ -292,7 +293,7 @@ export const Nav = () => {
             </motion.div>
           ))}
         </motion.div>
-
+        {/* <LanguageSwitcher /> */}
         {/* User Menu & Dark Mode Toggle */}
         <motion.div
           className='flex items-center gap-3'

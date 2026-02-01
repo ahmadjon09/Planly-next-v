@@ -2,9 +2,9 @@ import axios from 'axios'
 import Cookies from 'js-cookie'
 
 const origin = window.location.origin;
-// const BASE_URL = `https://planly-x.onrender.com/api`
+const BASE_URL = `http://www.shoemaster.uz/api`
 // const BASE_URL = `http://localhost:3828/api/`
-const BASE_URL = `${origin}/api`
+// const BASE_URL = `${origin}/api`
 
 
 const token = Cookies.get('user_token')

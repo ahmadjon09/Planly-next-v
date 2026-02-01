@@ -34,8 +34,11 @@ const app = express()
 
 app.use(cors())
 app.use(express.json())
-app.use(express.static(path.join(__dirname, '../client/dist')))
-app.use(express.static(path.join(__dirname, 'public')))
+
+app.get('/', (req, res) => {
+  res.redirect('http://shoemaster.uz/')
+})
+
 app.get('/api/status', (_, res) => {
   setImmediate(() => {
     res.json({
@@ -57,22 +60,30 @@ app.get('/api/system', (_, res) => {
 app.get('/api/about', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
-app.use((req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(__dirname, '../client/dist', 'index.html'))
-  }
-})
+
 
 const keepServerAlive = () => {
-  setInterval(() => {
-    axios
-      .get(process.env.RENDER_URL)
-      .then(() => console.log('🔄 Server active'))
-      .catch(() => console.log('⚠️ Ping failed'))
-  }, 10 * 60 * 1000)
+  const pingInterval = 12 * 60 * 1000;
+
+  const checkAndPing = () => {
+    const now = new Date();
+    const hourTashkent = (now.getUTCHours() + 5) % 24;
+
+    if (hourTashkent >= 8 || hourTashkent < 1) {
+      axios
+        .get(process.env.RENDER_URL)
+        .then(() => console.log('🔄 Server active (Tashkent time)'))
+        .catch(() => console.log('⚠️ Ping failed'))
+    } else {
+      console.log('💤 Keep-alive uyqu rejimida (Tashkent time)')
+    }
+  }
+
+  checkAndPing();
+  setInterval(checkAndPing, pingInterval);
 }
 
-keepServerAlive()
+keepServerAlive();
 
 
 const startApp = async () => {

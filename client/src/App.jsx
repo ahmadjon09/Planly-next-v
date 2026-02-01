@@ -15,11 +15,16 @@ import { Workers } from './pages/Workers'
 import { Orders } from './pages/Orders'
 import { AddNewOrder } from './mod/OrderModal'
 import DashboardPage, { } from './pages/Dashboard'
+import { runGlobalUzbekTranslit } from './assets/js/uzbekGlobalTranslit'
 
 export default function App() {
-  const { setUser, user, netErr } = useContext(ContextData)
+  const { setUser, user, netErr, lang } = useContext(ContextData)
   const [isLoading, setIsLoading] = useState(false)
   const token = Cookies.get('user_token')
+
+  // useEffect(() => {
+  //   runGlobalUzbekTranslit()
+  // }, [lang])
 
   useEffect(() => {
     const getMyData = async () => {

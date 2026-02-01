@@ -11,14 +11,18 @@ export const ContextProvider = ({ children }) => {
   const [dark, setDark] = useState(() => {
     return localStorage.getItem('dark') === '!true'
   })
-  const [visible, setVisible] = useState(() => {
-    return localStorage.getItem('is_DCC') === '!true'
-  })
+  const [lang, setLangState] = useState(
+    () => localStorage.getItem('lang') || 'uzk'
+  )
 
-  useEffect(() => {
-    localStorage.setItem('dark', dark)
-    document.documentElement.classList.toggle('dark', dark)
-  }, [dark])
+  const setLang = (value) => {
+    setLangState(value)
+    localStorage.setItem('lang', value)
+  }
+
+
+
+
 
   const setUserToken = (token) => {
     Cookies.set('user_token', token, { expires: 7 })
@@ -44,7 +48,9 @@ export const ContextProvider = ({ children }) => {
         openX,
         setOpenX,
         pingms,
-        setPingms
+        setPingms,
+        lang,
+        setLang
       }}
     >
       <>
